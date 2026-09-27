@@ -1,0 +1,272 @@
+// Package admin implements global administration: users and roles, and
+// instance settings.
+package admin
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+)
+
+// SettingRetentionDays is the key of the attachment retention setting.
+const SettingRetentionDays = "attachment_retention_days"
+
+// User is a user with roles.
+type User struct {
+	ID          uuid.UUID        `json:"id"`
+	Username    string           `json:"username"`
+	DisplayName string           `json:"displayName"`
+	AvatarURL   *string          `json:"avatarUrl"`
+	GlobalAdmin bool             `json:"globalAdmin"`
+	Roles       []auth.RoleAreas `json:"roles"`
+	CreatedAt   time.Time        `json:"createdAt"`
+}
+
+// RolesInput is the body of PUT /users/{id}/roles.
+type RolesInput struct {
+	GlobalAdmin bool             `json:"globalAdmin"`
+	Roles       []auth.RoleAreas `json:"roles"`
+}
+
+// Service implements admin use cases.
+type Service struct{ pool *pgxpool.Pool }
+
+// NewService creates the service.
+func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+
+func requireGlobal(p *domain.Principal) error {
+	if !p.GlobalAdmin {
+		return apperr.Forbidden("forbidden", "global administrator role required")
+	}
+	return nil
+}
+
+// Users lists users with roles.
+func (s *Service) Users(ctx context.Context, q string, page httpx.Page) ([]User, error) {
+	args := []any{"%" + q + "%", page.Limit + 1}
+	cond := ""
+	if c := page.Cursor; c != nil {
+		args = append(args, c.T, c.ID)
+		cond = ` AND (created_at, id::text) > ($3, $4)`
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id, username, display_name, avatar_url, is_global_admin, created_at FROM users
+		WHERE (username ILIKE $1 OR display_name ILIKE $1)`+cond+` ORDER BY created_at, id::text LIMIT $2`, args...)
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.AvatarURL, &u.GlobalAdmin, &u.CreatedAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range users {
+		p := domain.NewPrincipal(users[i].ID, "", "", users[i].GlobalAdmin)
+		rr, err := s.pool.Query(ctx, `SELECT role, area FROM user_roles WHERE user_id = $1`, users[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		for rr.Next() {
+			var role domain.Role
+			var area domain.Area
+			if err := rr.Scan(&role, &area); err != nil {
+				rr.Close()
+				return nil, err
+			}
+			p.Grant(role, area)
+		}
+		rr.Close()
+		users[i].Roles = auth.RolesOf(p)
+	}
+	return users, nil
+}
+
+// SetRoles replaces the user's roles. The last global administrator cannot be demoted.
+func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, in RolesInput) error {
+	for _, ra := range in.Roles {
+		if !ra.Role.Valid() {
+			return apperr.Unprocessable("invalid_role", fmt.Sprintf("unknown role %q", ra.Role))
+		}
+		for _, a := range ra.Areas {
+			if !a.Valid() {
+				return apperr.Unprocessable("invalid_area", fmt.Sprintf("unknown area %q", a))
+			}
+		}
+	}
+	return postgres.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		// Serialize role changes of global admins.
+		if _, err := tx.Exec(ctx, `LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			return err
+		}
+		var current bool
+		if err := tx.QueryRow(ctx, `SELECT is_global_admin FROM users WHERE id = $1`, userID).Scan(&current); err != nil {
+			if postgres.IsNoRows(err) {
+				return apperr.NotFound("user_not_found", "user not found")
+			}
+			return err
+		}
+		if current && !in.GlobalAdmin {
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM users WHERE is_global_admin`).Scan(&n); err != nil {
+				return err
+			}
+			if n <= 1 {
+				return apperr.Conflict("last_global_admin", "the last global administrator cannot be removed")
+			}
+		}
+		if _, err := tx.Exec(ctx, `UPDATE users SET is_global_admin = $2 WHERE id = $1`, userID, in.GlobalAdmin); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
+		for _, ra := range in.Roles {
+			for _, a := range ra.Areas {
+				if _, err := tx.Exec(ctx, `INSERT INTO user_roles (user_id, role, area) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, userID, ra.Role, a); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// RetentionDays reads the attachment retention setting (default 90).
+func RetentionDays(ctx context.Context, q postgres.Querier) (int, error) {
+	var raw []byte
+	err := q.QueryRow(ctx, `SELECT value FROM admin_settings WHERE key = $1`, SettingRetentionDays).Scan(&raw)
+	if postgres.IsNoRows(err) {
+		return 90, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		// tolerate "90" stored as a string
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			return strconv.Atoi(s)
+		}
+		return 0, err
+	}
+	return n, nil
+}
+
+// Settings is the instance settings object.
+type Settings struct {
+	AttachmentRetentionDays int `json:"attachmentRetentionDays"`
+}
+
+// Routes mounts /admin/api/v1 users and settings.
+func (s *Service) Routes(r chi.Router) {
+	r.Get("/users", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		p, err := httpx.MustPrincipal(r)
+		if err != nil {
+			return err
+		}
+		if err := requireGlobal(p); err != nil {
+			return err
+		}
+		page, err := httpx.ParsePage(r)
+		if err != nil {
+			return err
+		}
+		users, err := s.Users(r.Context(), r.URL.Query().Get("q"), page)
+		if err != nil {
+			return err
+		}
+		httpx.JSON(w, 200, httpx.NewList(users, page.Limit, func(u User) (time.Time, string) { return u.CreatedAt, u.ID.String() }))
+		return nil
+	}))
+	r.Put("/users/{id}/roles", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		p, err := httpx.MustPrincipal(r)
+		if err != nil {
+			return err
+		}
+		if err := requireGlobal(p); err != nil {
+			return err
+		}
+		id, err := httpx.ParamUUID(r, "id")
+		if err != nil {
+			return err
+		}
+		var in RolesInput
+		if err := httpx.Decode(r, &in); err != nil {
+			return err
+		}
+		if err := s.SetRoles(r.Context(), id, in); err != nil {
+			return err
+		}
+		httpx.NoContent(w)
+		return nil
+	}))
+	r.Get("/settings", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		p, err := httpx.MustPrincipal(r)
+		if err != nil {
+			return err
+		}
+		if err := requireGlobal(p); err != nil {
+			return err
+		}
+		n, err := RetentionDays(r.Context(), s.pool)
+		if err != nil {
+			return err
+		}
+		httpx.JSON(w, 200, Settings{AttachmentRetentionDays: n})
+		return nil
+	}))
+	r.Patch("/settings", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		p, err := httpx.MustPrincipal(r)
+		if err != nil {
+			return err
+		}
+		if err := requireGlobal(p); err != nil {
+			return err
+		}
+		var in struct {
+			AttachmentRetentionDays *int `json:"attachmentRetentionDays"`
+		}
+		if err := httpx.Decode(r, &in); err != nil {
+			return err
+		}
+		if in.AttachmentRetentionDays != nil {
+			n := *in.AttachmentRetentionDays
+			if n < 1 || n > 3650 {
+				return apperr.Unprocessable("invalid_retention", "retention must be between 1 and 3650 days")
+			}
+			if _, err := s.pool.Exec(r.Context(), `INSERT INTO admin_settings (key, value, updated_by, updated_at) VALUES ($1, $2, $3, now())
+				ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+				SettingRetentionDays, strconv.Itoa(n), p.UserID); err != nil {
+				return err
+			}
+		}
+		n, err := RetentionDays(r.Context(), s.pool)
+		if err != nil {
+			return err
+		}
+		httpx.JSON(w, 200, Settings{AttachmentRetentionDays: n})
+		return nil
+	}))
+}

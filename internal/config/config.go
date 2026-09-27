@@ -1,0 +1,278 @@
+// Package config loads instance configuration from environment variables.
+package config
+
+import (
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Config holds every deployment-level parameter of a Hammurapi instance.
+type Config struct {
+	// HTTP
+	HTTPAddr    string // user API, admin API, hooks
+	ServiceAddr string // healthz, readyz, metrics
+	MCPAddr     string // internal MCP endpoint for the agent
+	PublicURL   string // external URL of the web app, used for OAuth redirects and cookies
+
+	// Git provider
+	GitProvider      string // github | gitlab
+	GitBaseURL       string
+	GitOAuthURL      string // browser-facing base URL for OAuth authorize (defaults to GitBaseURL)
+	GitRepo          string // owner/name
+	GitDefaultBranch string
+	GitHubAppID      string
+	GitHubPrivateKey string
+	GitHubClientID   string
+	GitHubSecret     string
+	GitLabClientID   string
+	GitLabSecret     string
+	WebhookSecret    string
+
+	// Agent
+	ACPCommand     string
+	ACPArgs        []string
+	ACPEnv         []string
+	ACPMaxProcs    int
+	ACPIdleTimeout time.Duration
+
+	BootstrapAdmins []string
+
+	UploadMaxBytes     int64
+	UploadAllowedTypes []string
+
+	DatabaseURL  string
+	KafkaBrokers []string
+	S3Endpoint   string
+	S3Bucket     string
+	S3AccessKey  string
+	S3SecretKey  string
+	S3UseSSL     bool
+	WhisperURL   string
+
+	TokenEncryptionKey []byte
+
+	OTLPEndpoint    string
+	LogLevel        string
+	DefaultLanguage string
+
+	ImportMaxBytes             int64
+	ImportMaxUncompressedBytes int64
+	ImportMaxFiles             int
+	ImportAllowedAssetTypes    []string
+}
+
+// DefaultUploadTypes is the default allow-list of chat attachment MIME types.
+var DefaultUploadTypes = []string{
+	"image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/x-ole-storage", // legacy Office files are often detected as OLE containers
+	"text/plain", "application/pdf",
+}
+
+// DefaultImportAssetTypes is the default allow-list of files next to spec.md in import archives.
+var DefaultImportAssetTypes = []string{
+	"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+	"application/pdf", "text/html",
+}
+
+// Load reads configuration from the environment. Mode-specific requirements are checked by Validate.
+func Load() (*Config, error) {
+	c := &Config{
+		HTTPAddr:         env("HTTP_ADDR", ":8080"),
+		ServiceAddr:      env("SERVICE_ADDR", ":9100"),
+		MCPAddr:          env("MCP_ADDR", "127.0.0.1:8081"),
+		PublicURL:        strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
+		GitProvider:      strings.ToLower(env("GIT_PROVIDER", "")),
+		GitBaseURL:       strings.TrimRight(env("GIT_BASE_URL", ""), "/"),
+		GitRepo:          env("GIT_REPO", ""),
+		GitDefaultBranch: env("GIT_DEFAULT_BRANCH", "main"),
+		GitHubAppID:      env("GITHUB_APP_ID", ""),
+		GitHubPrivateKey: env("GITHUB_APP_PRIVATE_KEY", ""),
+		GitHubClientID:   env("GITHUB_CLIENT_ID", ""),
+		GitHubSecret:     env("GITHUB_CLIENT_SECRET", ""),
+		GitLabClientID:   env("GITLAB_CLIENT_ID", ""),
+		GitLabSecret:     env("GITLAB_CLIENT_SECRET", ""),
+		WebhookSecret:    env("WEBHOOK_SECRET", ""),
+		ACPCommand:       env("ACP_AGENT_COMMAND", ""),
+		ACPArgs:          strings.Fields(env("ACP_AGENT_ARGS", "")),
+		ACPEnv:           splitList(env("ACP_AGENT_ENV", ""), ";"),
+		BootstrapAdmins:  splitList(env("BOOTSTRAP_ADMINS", ""), ","),
+		DatabaseURL:      env("DATABASE_URL", ""),
+		KafkaBrokers:     splitList(env("KAFKA_BROKERS", ""), ","),
+		S3Endpoint:       env("S3_ENDPOINT", ""),
+		S3Bucket:         env("S3_BUCKET", "hammurapi"),
+		S3AccessKey:      env("S3_ACCESS_KEY", ""),
+		S3SecretKey:      env("S3_SECRET_KEY", ""),
+		WhisperURL:       strings.TrimRight(env("WHISPER_URL", ""), "/"),
+		OTLPEndpoint:     env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		LogLevel:         env("LOG_LEVEL", "info"),
+		DefaultLanguage:  env("DEFAULT_LANGUAGE", "en"),
+	}
+	var err error
+	if c.ACPMaxProcs, err = envInt("ACP_MAX_PROCESSES", 4); err != nil {
+		return nil, err
+	}
+	if c.ACPIdleTimeout, err = envDuration("ACP_SESSION_IDLE_TIMEOUT", 30*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.UploadMaxBytes, err = envInt64("UPLOAD_MAX_BYTES", 20<<20); err != nil {
+		return nil, err
+	}
+	if c.ImportMaxBytes, err = envInt64("IMPORT_MAX_BYTES", 50<<20); err != nil {
+		return nil, err
+	}
+	if c.ImportMaxUncompressedBytes, err = envInt64("IMPORT_MAX_UNCOMPRESSED_BYTES", 200<<20); err != nil {
+		return nil, err
+	}
+	if c.ImportMaxFiles, err = envInt("IMPORT_MAX_FILES", 500); err != nil {
+		return nil, err
+	}
+	if c.S3UseSSL, err = strconv.ParseBool(env("S3_USE_SSL", "false")); err != nil {
+		return nil, fmt.Errorf("S3_USE_SSL: %w", err)
+	}
+	c.UploadAllowedTypes = splitList(env("UPLOAD_ALLOWED_TYPES", ""), ",")
+	if len(c.UploadAllowedTypes) == 0 {
+		c.UploadAllowedTypes = DefaultUploadTypes
+	}
+	c.ImportAllowedAssetTypes = splitList(env("IMPORT_ALLOWED_ASSET_TYPES", ""), ",")
+	if len(c.ImportAllowedAssetTypes) == 0 {
+		c.ImportAllowedAssetTypes = DefaultImportAssetTypes
+	}
+	if k := env("TOKEN_ENCRYPTION_KEY", ""); k != "" {
+		if c.TokenEncryptionKey, err = decodeKey(k); err != nil {
+			return nil, err
+		}
+	}
+	c.GitOAuthURL = strings.TrimRight(env("GIT_OAUTH_URL", ""), "/")
+	if c.GitBaseURL == "" {
+		switch c.GitProvider {
+		case "github":
+			c.GitBaseURL = "https://github.com"
+		case "gitlab":
+			c.GitBaseURL = "https://gitlab.com"
+		}
+	}
+	if c.GitOAuthURL == "" {
+		c.GitOAuthURL = c.GitBaseURL
+	}
+	return c, nil
+}
+
+// Validate checks the parameters required by the given binary mode.
+func (c *Config) Validate(mode string) error {
+	var missing []string
+	need := func(name, v string) {
+		if v == "" {
+			missing = append(missing, name)
+		}
+	}
+	need("DATABASE_URL", c.DatabaseURL)
+	if mode == "migrate" {
+		return missingErr(missing)
+	}
+	switch c.GitProvider {
+	case "github":
+		need("GITHUB_CLIENT_ID", c.GitHubClientID)
+		need("GITHUB_CLIENT_SECRET", c.GitHubSecret)
+	case "gitlab":
+		need("GITLAB_CLIENT_ID", c.GitLabClientID)
+		need("GITLAB_CLIENT_SECRET", c.GitLabSecret)
+	default:
+		return fmt.Errorf("GIT_PROVIDER must be github or gitlab, got %q", c.GitProvider)
+	}
+	need("GIT_REPO", c.GitRepo)
+	if len(c.TokenEncryptionKey) == 0 {
+		missing = append(missing, "TOKEN_ENCRYPTION_KEY")
+	}
+	if mode == "api" || mode == "worker" {
+		if len(c.KafkaBrokers) == 0 {
+			missing = append(missing, "KAFKA_BROKERS")
+		}
+	}
+	if mode == "api" {
+		need("WEBHOOK_SECRET", c.WebhookSecret)
+	}
+	need("S3_ENDPOINT", c.S3Endpoint)
+	return missingErr(missing)
+}
+
+func missingErr(missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
+}
+
+// decodeKey accepts a 32-byte key as base64 or hex.
+func decodeKey(s string) ([]byte, error) {
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil && len(b) == 32 {
+		return b, nil
+	}
+	if b, err := hex.DecodeString(s); err == nil && len(b) == 32 {
+		return b, nil
+	}
+	return nil, fmt.Errorf("TOKEN_ENCRYPTION_KEY must be 32 bytes encoded as base64 or hex")
+}
+
+func env(name, def string) string {
+	if v, ok := os.LookupEnv(name); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	return def
+}
+
+func envInt(name string, def int) (int, error) {
+	v := env(name, "")
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return n, nil
+}
+
+func envInt64(name string, def int64) (int64, error) {
+	v := env(name, "")
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return n, nil
+}
+
+func envDuration(name string, def time.Duration) (time.Duration, error) {
+	v := env(name, "")
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return d, nil
+}
+
+func splitList(s, sep string) []string {
+	var out []string
+	for _, p := range strings.Split(s, sep) {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

@@ -1,0 +1,287 @@
+//go:build integration
+
+// Package itest runs repository SQL against a real Postgres (dockertest).
+// Run with: go test -tags integration ./internal/itest/
+package itest
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ory/dockertest/v4"
+
+	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/admin"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/approvals"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/attachments"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/domains"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/profile"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
+)
+
+var pool *pgxpool.Pool
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+	dp, err := dockertest.NewPool(ctx, "", dockertest.WithMaxWait(2*time.Minute))
+	if err != nil {
+		fmt.Println("docker unavailable:", err)
+		os.Exit(1)
+	}
+	res, err := dp.Run(ctx, "postgres", dockertest.WithTag("16"), dockertest.WithoutReuse(),
+		dockertest.WithEnv([]string{"POSTGRES_PASSWORD=pw", "POSTGRES_DB=hammurapi"}))
+	if err != nil {
+		fmt.Println("start postgres:", err)
+		_ = dp.Close(ctx)
+		os.Exit(1)
+	}
+	url := fmt.Sprintf("postgres://postgres:pw@%s/hammurapi?sslmode=disable", res.GetHostPort("5432/tcp"))
+	err = dp.Retry(ctx, time.Minute, func() error {
+		var err error
+		if pool, err = postgres.Connect(ctx, url); err != nil {
+			return err
+		}
+		return pool.Ping(ctx)
+	})
+	if err == nil {
+		err = postgres.Migrate(ctx, url)
+	}
+	if err != nil {
+		fmt.Println("postgres:", err)
+		_ = dp.Close(ctx)
+		os.Exit(1)
+	}
+	code := m.Run()
+	pool.Close()
+	_ = dp.Close(ctx)
+	os.Exit(code)
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRepositories walks a feature through the projection with every query.
+func TestRepositories(t *testing.T) {
+	ctx := context.Background()
+	authRepo := auth.NewRepository(pool)
+
+	// AUTH-02/03: users are created on first login; the second call is an update.
+	u, created, err := authRepo.UpsertUser(ctx, auth.UserRow{ProviderUID: "1", Username: "anna", DisplayName: "Anna K.",
+		Language: "en", AgentName: "Codex", AgentTone: domain.ToneBusiness, GlobalAdmin: true})
+	must(t, err)
+	if !created || !u.GlobalAdmin {
+		t.Fatalf("first login: %+v %v", u, created)
+	}
+	_, created, err = authRepo.UpsertUser(ctx, auth.UserRow{ProviderUID: "1", Username: "anna", DisplayName: "Anna", Language: "en", AgentName: "X", AgentTone: domain.ToneMentor})
+	must(t, err)
+	if created {
+		t.Fatal("second login created a user")
+	}
+	must(t, authRepo.SaveToken(ctx, u.ID, auth.EncryptedToken{Access: []byte{1}, ExpiresAt: time.Now().Add(time.Hour)}))
+	tok, err := authRepo.Token(ctx, u.ID)
+	must(t, err)
+	if tok == nil {
+		t.Fatal("token not stored")
+	}
+	sid, err := authRepo.CreateSession(ctx, u.ID, "csrf", time.Hour)
+	must(t, err)
+	sess, err := authRepo.Session(ctx, sid)
+	must(t, err)
+	must(t, authRepo.TouchSession(ctx, sid, time.Hour))
+	if sess == nil || sess.CSRFToken != "csrf" {
+		t.Fatalf("session %+v", sess)
+	}
+
+	// Admin: roles, last global admin (ADM-11), user list.
+	adm := admin.NewService(pool)
+	must(t, adm.SetRoles(ctx, u.ID, admin.RolesInput{GlobalAdmin: true, Roles: []auth.RoleAreas{
+		{Role: domain.RoleEditor, Areas: []domain.Area{domain.AreaProduct, domain.AreaDesign}},
+		{Role: domain.RoleApprover, Areas: []domain.Area{domain.AreaProduct}},
+	}}))
+	tu.Code(t, adm.SetRoles(ctx, u.ID, admin.RolesInput{GlobalAdmin: false}), 409, "last_global_admin")
+	users, err := adm.Users(ctx, "ann", httpx.Page{Limit: 10})
+	must(t, err)
+	if len(users) != 1 || len(users[0].Roles) != 2 {
+		t.Fatalf("users %+v", users)
+	}
+	p, err := authRepo.Principal(ctx, u.ID)
+	must(t, err)
+	if !p.Has(domain.RoleApprover, domain.AreaProduct) || !p.GlobalAdmin {
+		t.Fatalf("principal %+v", p)
+	}
+	days, err := admin.RetentionDays(ctx, pool)
+	must(t, err)
+	if days != 90 {
+		t.Fatalf("retention %d", days)
+	}
+
+	// Dictionary (NOAPR-01/02/03, ADM-03).
+	ds := domains.NewService(domains.NewRepository(pool), nopEvents{})
+	must(t, ds.CreateDomain(ctx, p, "FMS", "Fleet", true))
+	must(t, ds.CreateDomain(ctx, p, "CRM", "Clients", false))
+	tu.Code(t, ds.CreateDomain(ctx, p, "FMS", "Again", true), 409, "key_exists")
+	must(t, ds.CreateSystem(ctx, p, "FMS", "CAR", "Cars"))
+	no := false
+	must(t, ds.PatchDomain(ctx, p, "FMS", nil, &no))
+	n, err := ds.SetApprovalAll(ctx, p, true)
+	must(t, err)
+	if n != 2 {
+		t.Fatalf("changed %d, want 2", n)
+	}
+	list, err := domains.NewRepository(pool).List(ctx)
+	must(t, err)
+	if len(list) != 2 || len(list[1].Systems) != 1 {
+		t.Fatalf("domains %+v", list)
+	}
+
+	// Profile: my domains drive the "mine" filter (PROF-03).
+	prof := profile.NewService(pool)
+	doms := []string{"FMS"}
+	lang := "de"
+	pr, err := prof.Update(ctx, u.ID, profile.Patch{Domains: &doms, Language: &lang})
+	must(t, err)
+	if pr.Language != "de" || len(pr.Domains) != 1 {
+		t.Fatalf("profile %+v", pr)
+	}
+
+	// Feature + gates + history.
+	store := specdata.NewPG(pool)
+	sys, err := store.SystemByKeys(ctx, "FMS", "CAR")
+	must(t, err)
+	var f *specdata.Feature
+	must(t, store.InTx(ctx, func(tx specdata.Store) error {
+		num, err := tx.NextNumber(ctx, sys.ID)
+		if err != nil {
+			return err
+		}
+		f = &specdata.Feature{UniqueID: domain.FormatUniqueID("FMS", "CAR", num), SystemID: sys.ID, Number: num, Title: "Weekend booking",
+			Branch: "feature/FMS.CAR-0001", PRNumber: 1, PRURL: "u", CreatedBy: u.ID}
+		if err := tx.InsertFeature(ctx, f); err != nil {
+			return err
+		}
+		now := time.Now()
+		g := &specdata.Gate{FeatureID: f.ID, Area: domain.AreaProduct, Status: domain.GateInReview, HeadCommit: "c1", SubmittedAt: &now, CreatedBy: u.ID}
+		if err := tx.InsertGate(ctx, g); err != nil {
+			return err
+		}
+		if err := tx.InsertEvent(ctx, &specdata.GateEvent{GateID: g.ID, Type: domain.EventSubmitted, ActorID: &u.ID}); err != nil {
+			return err
+		}
+		return tx.InsertEvent(ctx, &specdata.GateEvent{GateID: g.ID, Type: domain.EventCreated, ActorID: &u.ID, CommitSHA: &g.HeadCommit})
+	}))
+	got, err := store.FeatureByUniqueID(ctx, "FMS.CAR-0001")
+	must(t, err)
+	if got.DomainKey != "FMS" || !got.ApprovalRequired || got.CreatedByName != "Anna" {
+		t.Fatalf("feature %+v", got)
+	}
+	for _, filter := range []specdata.ListFilter{
+		{UserID: u.ID, Domain: "mine", Status: "in_progress", Page: httpx.Page{Limit: 10}},
+		{UserID: u.ID, Domain: "FMS", Status: "all", Query: "weekend", Page: httpx.Page{Limit: 10}},
+		{UserID: u.ID, Domain: "all", Status: "all", Query: "FMS.CAR", Page: httpx.Page{Limit: 10, Cursor: &httpx.Cursor{T: time.Now().Add(time.Hour), ID: "z"}}},
+	} {
+		items, err := store.ListFeatures(ctx, filter)
+		must(t, err)
+		if len(items) != 1 || len(items[0].Gates) != 1 {
+			t.Fatalf("list %+v: %+v", filter, items)
+		}
+	}
+	hist, err := store.History(ctx, f.ID, domain.AreaProduct, httpx.Page{Limit: 10})
+	must(t, err)
+	if len(hist) != 2 {
+		t.Fatalf("history %+v", hist)
+	}
+	subID, subName, err := store.LastSubmitter(ctx, hist[0].GateID)
+	must(t, err)
+	if subID == nil || *subName != "Anna" {
+		t.Fatal("submitter")
+	}
+	fixes, err := store.Fixes(ctx, f.ID)
+	must(t, err)
+	if len(fixes) != 0 {
+		t.Fatal("fixes")
+	}
+
+	// Approvals queue (ROLE-03, HOME-04) respects approval_required (NOAPR-07).
+	ar := approvals.NewRepository(pool)
+	pending, err := ar.Pending(ctx, u.ID.String(), httpx.Page{Limit: 10})
+	must(t, err)
+	if len(pending) != 1 || pending[0].SubmittedBy == nil {
+		t.Fatalf("pending %+v", pending)
+	}
+	must(t, ds.PatchDomain(ctx, p, "FMS", nil, &no))
+	pending, err = ar.Pending(ctx, u.ID.String(), httpx.Page{Limit: 10})
+	must(t, err)
+	if len(pending) != 0 {
+		t.Fatal("queue shows a domain without approval")
+	}
+
+	// Webhook idempotency (HOOK-02) and soft deletion (DEL-07/13).
+	fresh, err := store.MarkWebhookProcessed(ctx, "evt")
+	must(t, err)
+	again, err := store.MarkWebhookProcessed(ctx, "evt")
+	must(t, err)
+	if !fresh || again {
+		t.Fatal("webhook idempotency")
+	}
+	must(t, store.MarkDeleted(ctx, f.ID, u.ID, true))
+	pend, err := store.FeaturesPendingCleanup(ctx)
+	must(t, err)
+	if len(pend) != 1 {
+		t.Fatal("cleanup queue")
+	}
+	items, err := store.ListFeatures(ctx, specdata.ListFilter{UserID: u.ID, Domain: "all", Status: "all", Page: httpx.Page{Limit: 10}})
+	must(t, err)
+	if len(items) != 0 {
+		t.Fatal("deleted feature listed")
+	}
+	num, err := store.NextNumber(ctx, sys.ID)
+	must(t, err)
+	if num != 2 {
+		t.Fatalf("number reused: %d", num)
+	}
+
+	// Chat history and attachments.
+	chat := agent.NewRepository(pool)
+	mid, _, err := chat.Insert(ctx, pool, u.ID, "user", "general", nil, nil, "hello", true)
+	must(t, err)
+	att := attachments.NewService(pool, nil, 1<<20, nil)
+	if _, err := pool.Exec(ctx, `INSERT INTO attachments (user_id, file_name, mime_type, size_bytes, s3_key) VALUES ($1,'a.png','image/png',1,'k1')`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	al, err := att.List(ctx, u.ID, httpx.Page{Limit: 10})
+	must(t, err)
+	must(t, att.Link(ctx, pool, u.ID, mid, []uuid.UUID{al.Items[0].ID}))
+	msgs, err := chat.History(ctx, u.ID, httpx.Page{Limit: 10})
+	must(t, err)
+	if len(msgs) != 1 || len(msgs[0].Attachments) != 1 || !msgs[0].IsVoice {
+		t.Fatalf("history %+v", msgs)
+	}
+	must(t, chat.SaveSessionID(ctx, u.ID, "s1"))
+	sidStr, err := chat.SessionID(ctx, u.ID)
+	must(t, err)
+	if sidStr != "s1" {
+		t.Fatal("agent session id")
+	}
+	// ATT-05: someone else's attachment.
+	_, err = att.Get(ctx, uuid.New(), al.Items[0].ID)
+	tu.Code(t, err, 403, "forbidden")
+}
+
+type nopEvents struct{}
+
+func (nopEvents) Publish(context.Context, events.Event) {}

@@ -1,2 +1,82 @@
 # hammurapi-core
-Hammurapi Backlend
+
+Backend of **Hammurapi** — a platform for writing product specifications through a
+sequence of quality gates (`product → design → arch → tech → qa`), with an AI agent as a
+partner and git as the source of truth for content.
+
+One Go binary, four modes:
+
+| Mode | Purpose | Kubernetes |
+| --- | --- | --- |
+| `api` | User/admin HTTP API, SSE, webhooks, ACP agent pool, internal MCP endpoint | Deployment |
+| `worker` | Kafka consumer: push webhooks → gate projection; archive imports | Deployment |
+| `cleaner` | Expired attachments, sessions, locks, unconfirmed imports, pending branch deletions | CronJob |
+| `migrate` | goose migrations (embedded) | Job / Helm hook |
+
+Deployment (docker-compose, Helm, installer) and documentation live in the
+[`hammurapi`](../hammurapi) repository; the web app lives in [`hammurapi-web`](../hammurapi-web).
+
+## Layout
+
+```text
+cmd/hammurapi/        entry point: mode selection and wiring
+cmd/fakeagent/        scripted ACP agent for tests and smoke runs (not for production)
+migrations/           goose SQL, embedded into the binary
+internal/app/         dependency assembly and routing per mode
+internal/features/    vertical slices: auth, profile, domains, features, gates, approvals,
+                      handoff, rules, agent, voice, attachments, imports, admin, feedback, webhooks
+internal/specdata/    shared projection of features, gates, history and locks
+internal/platform/    adapters: postgres, kafka, git (GitHub + GitLab), acp, mcp, storage (S3),
+                      whisper, events (NOTIFY → SSE), crypto, logging, telemetry, metrics, httpx
+internal/jobs/cleaner the cleaner mode
+```
+
+## How the pieces fit
+
+- **Git is the source of truth.** Documents and rules live only in the instance repository and are
+  accessed through the provider API (no local clone). Commits are made with the user's own
+  OAuth token and carry `Hammurapi-*` trailers.
+- **Statuses live in Postgres.** Every push to a `feature/<id>` branch goes webhook → Kafka
+  (partitioned by feature id) → `worker`. A commit touching a gate folder that Hammurapi does not
+  already know is an edit: event `edited`, and the gate returns to draft. Commits Hammurapi made
+  itself (creation, import, deletion) are recorded as `head_commit` first, so they are skipped.
+- **Approval is guarded against stale content:** before approving, `api` asks the provider for the
+  latest commit of the gate folder and refuses if the projection has not seen it yet.
+- **Events** are published with `pg_notify`; every `api` pod listens and fans them out over one SSE
+  stream per browser. Agent tokens go straight to the local SSE stream (sticky sessions).
+- **Agent:** the ACP agent runs as a subprocess of `api` (JSON-RPC over stdio), in a pool of at most
+  `ACP_MAX_PROCESSES`, one session per user. Hammurapi tools are exposed to it as an MCP server on
+  `127.0.0.1:8081/mcp` (or through `hammurapi mcp-proxy` for agents without HTTP MCP) with a token
+  scoped to the chat mode, the feature and the user's editor areas. There is no delete tool.
+
+## Development
+
+Requires Go 1.27. Docker is needed only for integration tests and images.
+
+```sh
+make build            # bin/hammurapi, bin/hammurapi-fakeagent
+make test             # unit tests (mockgen mocks, fake ACP agent over stdio, httptest providers)
+make test-integration # + Postgres via dockertest v4
+make generate         # regenerate mocks (go tool mockgen)
+make image            # docker image hammurapi:<version>
+```
+
+Run locally against the compose stack from the `hammurapi` repository:
+
+```sh
+export $(grep -v '^#' ../hammurapi/.env | xargs)
+./bin/hammurapi migrate && ./bin/hammurapi api
+```
+
+## Configuration
+
+All settings are environment variables; see `internal/config/config.go` and
+`hammurapi/docs/configuration.md`. Besides the variables from the architecture spec, the binary
+reads `PUBLIC_URL` (external URL, used for the OAuth callback and `Secure` cookies), `HTTP_ADDR`
+(`:8080`), `SERVICE_ADDR` (`:9100`), `MCP_ADDR` (`127.0.0.1:8081`) and `S3_USE_SSL`.
+
+## API
+
+REST/JSON under `/api/v1` (session + `X-CSRF-Token`), `/admin/api/v1`, `/hooks/v1/git`, and
+`:9100/{healthz,readyz,metrics}`. Errors are `{"error":{"code","message","details"}}` with stable
+codes; the frontend localizes by `code`. See `hammurapi/docs/api.md`.

@@ -1,0 +1,171 @@
+// Package approvals implements "submit for approval", "approve" and the
+// "awaiting your approval" section of the home page.
+package approvals
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/features"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/gates"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+)
+
+// Pending is a gate awaiting approval.
+type Pending struct {
+	UniqueID    string      `json:"uniqueId"`
+	Title       string      `json:"title"`
+	Domain      string      `json:"domain"`
+	System      string      `json:"system"`
+	Area        domain.Area `json:"area"`
+	SubmittedBy *string     `json:"submittedBy"`
+	SubmittedAt time.Time   `json:"submittedAt"`
+	GateID      string      `json:"-"`
+}
+
+// Lister reads the approvals queue.
+type Lister interface {
+	Pending(ctx context.Context, userID string, page httpx.Page) ([]Pending, error)
+}
+
+// Service implements approval use cases.
+type Service struct {
+	store  specdata.Store
+	list   Lister
+	git    git.Provider
+	tokens git.TokenSource
+	events events.Publisher
+}
+
+// NewService creates the service.
+func NewService(store specdata.Store, list Lister, provider git.Provider, tokens git.TokenSource, ev events.Publisher) *Service {
+	return &Service{store: store, list: list, git: provider, tokens: tokens, events: ev}
+}
+
+var (
+	errApprovalDisabled = apperr.Conflict("approval_disabled", "approval is disabled for this domain")
+	errGateNotFound     = apperr.NotFound("gate_not_found", "gate not found")
+)
+
+func (s *Service) load(ctx context.Context, uniqueID string, area domain.Area) (*specdata.Feature, *specdata.Gate, error) {
+	f, err := features.Load(ctx, s.store, uniqueID)
+	if err != nil {
+		return nil, nil, err
+	}
+	g, err := s.store.ActiveGate(ctx, f.ID, area)
+	if errors.Is(err, specdata.ErrNotFound) {
+		return nil, nil, errGateNotFound
+	}
+	return f, g, err
+}
+
+// Submit moves a draft gate to in_review.
+func (s *Service) Submit(ctx context.Context, p *domain.Principal, uniqueID string, area domain.Area) (*specdata.Gate, error) {
+	if !p.Has(domain.RoleEditor, area) {
+		return nil, apperr.NoRole("editor", string(area))
+	}
+	f, g, err := s.load(ctx, uniqueID, area)
+	if err != nil {
+		return nil, err
+	}
+	if f.Status != domain.FeatureInProgress {
+		return nil, gates.ErrReadOnly
+	}
+	if !f.ApprovalRequired {
+		return nil, errApprovalDisabled
+	}
+	if g.Status != domain.GateDraft {
+		return nil, apperr.Conflict("not_draft", "only a draft can be submitted for approval")
+	}
+	now := time.Now()
+	g.Status, g.SubmittedAt = domain.GateInReview, &now
+	err = s.store.InTx(ctx, func(tx specdata.Store) error {
+		if err := tx.SaveGate(ctx, g); err != nil {
+			return err
+		}
+		return tx.InsertEvent(ctx, &specdata.GateEvent{GateID: g.ID, Type: domain.EventSubmitted, ActorID: &p.UserID})
+	})
+	if err != nil {
+		return nil, err
+	}
+	gates.RecordTransition(area, string(domain.GateInReview))
+	gates.PublishGateUpdated(ctx, s.events, f.UniqueID, g)
+	s.events.Publish(ctx, events.Event{Type: events.ApprovalsChanged, Data: map[string]string{"uniqueId": f.UniqueID}})
+	return g, nil
+}
+
+// Approve approves an in_review gate. Approval is strictly sequential in area
+// order, and it is rejected when git has a newer commit of the document than
+// the projection knows (a push whose webhook is not processed yet).
+func (s *Service) Approve(ctx context.Context, p *domain.Principal, uniqueID string, area domain.Area) (*specdata.Gate, error) {
+	if !p.Has(domain.RoleApprover, area) {
+		return nil, apperr.NoRole("approver", string(area))
+	}
+	f, g, err := s.load(ctx, uniqueID, area)
+	if err != nil {
+		return nil, err
+	}
+	if f.Status != domain.FeatureInProgress {
+		return nil, gates.ErrReadOnly
+	}
+	if !f.ApprovalRequired {
+		return nil, errApprovalDisabled
+	}
+	if g.Status != domain.GateInReview {
+		return nil, apperr.Conflict("not_in_review", "only a gate awaiting approval can be approved")
+	}
+	all, err := s.store.ActiveGates(ctx, f.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, other := range all {
+		if other.Area.Index() < area.Index() && other.Status != domain.GateApproved {
+			return nil, apperr.Conflict("previous_not_approved", "earlier gates must be approved first").With("area", other.Area)
+		}
+	}
+	token, err := s.tokens.Token(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	head, err := s.git.LatestCommit(ctx, token, f.Branch, git.SpecDir(f.DomainKey, f.SystemKey, f.UniqueID, string(area)))
+	if err != nil {
+		return nil, auth.MapGitError(err)
+	}
+	if head != g.HeadCommit {
+		return nil, apperr.Conflict("document_changed", "the document changed, reload the page")
+	}
+	now := time.Now()
+	g.Status, g.ApprovedCommit, g.ApprovedBy, g.ApprovedAt = domain.GateApproved, &head, &p.UserID, &now
+	err = s.store.InTx(ctx, func(tx specdata.Store) error {
+		if err := tx.SaveGate(ctx, g); err != nil {
+			return err
+		}
+		return tx.InsertEvent(ctx, &specdata.GateEvent{GateID: g.ID, Type: domain.EventApproved, ActorID: &p.UserID, CommitSHA: &head})
+	})
+	if err != nil {
+		return nil, err
+	}
+	gates.RecordTransition(area, string(domain.GateApproved))
+	gates.PublishGateUpdated(ctx, s.events, f.UniqueID, g)
+	s.events.Publish(ctx, events.Event{Type: events.ApprovalsChanged, Data: map[string]string{"uniqueId": f.UniqueID}})
+	return g, nil
+}
+
+// List returns the approvals queue; empty for users without approver roles.
+func (s *Service) List(ctx context.Context, p *domain.Principal, page httpx.Page) (httpx.List[Pending], error) {
+	if !p.HasRole(domain.RoleApprover) {
+		return httpx.List[Pending]{Items: []Pending{}}, nil
+	}
+	items, err := s.list.Pending(ctx, p.UserID.String(), page)
+	if err != nil {
+		return httpx.List[Pending]{}, err
+	}
+	return httpx.NewList(items, page.Limit, func(x Pending) (time.Time, string) { return x.SubmittedAt, x.GateID }), nil
+}
