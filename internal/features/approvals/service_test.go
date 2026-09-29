@@ -4,10 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 
 	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	emocks "github.com/GeenOnGrey/hammurapi-core/internal/platform/events/mocks"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
 	gmocks "github.com/GeenOnGrey/hammurapi-core/internal/platform/git/mocks"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
 	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
@@ -26,7 +28,7 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	ctrl := gomock.NewController(t)
 	f := &fixture{store: smocks.NewMockStore(ctrl), git: gmocks.NewMockProvider(ctrl), tokens: gmocks.NewMockTokenSource(ctrl), ev: emocks.NewMockPublisher(ctrl)}
-	f.svc = NewService(f.store, nil, f.git, f.tokens, f.ev)
+	f.svc = NewService(f.store, nil, f.git, f.tokens, f.ev, nil)
 	f.tokens.EXPECT().Token(gomock.Any(), gomock.Any()).Return("tok", nil).AnyTimes()
 	f.ev.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes()
 	tu.PassThroughTx(f.store)
@@ -49,7 +51,7 @@ func TestApproveRequiresPreviousGates(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
 	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateInReview), tu.Gate(feat, domain.AreaDesign, domain.GateInReview))
-	_, err := f.svc.Approve(context.Background(), tu.User("approver:design"), feat.UniqueID, domain.AreaDesign)
+	_, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaDesign)
 	tu.Code(t, err, 409, "previous_not_approved")
 }
 
@@ -58,15 +60,63 @@ func TestApproveDraft(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
 	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
-	_, err := f.svc.Approve(context.Background(), tu.User("approver:product"), feat.UniqueID, domain.AreaProduct)
+	_, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct)
 	tu.Code(t, err, 409, "not_in_review")
 }
 
-// APPR-06 / ROLE-02: an editor of product who approves arch cannot approve product.
-func TestApproveWithoutApproverRole(t *testing.T) {
+// GEN-08 / GEN-09: product/design by product experts, arch/tech/qa by technical experts.
+func TestApproveByExpertKind(t *testing.T) {
 	f := setup(t)
-	_, err := f.svc.Approve(context.Background(), tu.User("editor:product", "approver:arch"), "FMS.CAR-0005", domain.AreaProduct)
+	feat := tu.Feature(true)
+	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved), tu.Gate(feat, domain.AreaArch, domain.GateInReview))
+	_, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaArch)
 	tu.Code(t, err, 403, "forbidden")
+	_, err = f.svc.Approve(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaProduct)
+	tu.Code(t, err, 403, "forbidden")
+	_, err = f.svc.Approve(context.Background(), tu.User("expert:PAY:technical"), feat.UniqueID, domain.AreaArch)
+	tu.Code(t, err, 403, "forbidden")
+}
+
+type fakeGen struct{ areas []domain.Area }
+
+func (g *fakeGen) Generate(_ context.Context, _ *specdata.Feature, areas []domain.Area, _ uuid.UUID, _ string) error {
+	g.areas = areas
+	return nil
+}
+
+// GEN-01 / GEN-02: approving the last human gate starts tech and qa generation.
+func TestApproveLastHumanGateStartsGeneration(t *testing.T) {
+	f := setup(t)
+	gen := &fakeGen{}
+	f.svc.gen = gen
+	feat := tu.Feature(true)
+	g := tu.Gate(feat, domain.AreaArch, domain.GateInReview)
+	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved), g, tu.Gate(feat, domain.AreaTech, domain.GateApproved))
+	f.git.EXPECT().LatestCommit(gomock.Any(), "tok", feat.Branch, gomock.Any()).Return(g.HeadCommit, nil)
+	f.store.EXPECT().SaveGate(gomock.Any(), gomock.Any()).Return(nil)
+	f.store.EXPECT().InsertEvent(gomock.Any(), gomock.Any()).Return(nil)
+	if _, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaArch); err != nil {
+		t.Fatal(err)
+	}
+	if len(gen.areas) != 2 {
+		t.Fatalf("generation not started: %v", gen.areas)
+	}
+}
+
+// GEN-06 / R15: requirements without an ID are reported unless forced.
+func TestSubmitWarnsUnnumberedRequirements(t *testing.T) {
+	f := setup(t)
+	feat := tu.Feature(true)
+	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
+	f.git.EXPECT().GetFile(gomock.Any(), "tok", feat.Branch, "specs/FMS/CAR/FTR.FMS.CAR-0005/product/spec.md").
+		Return(&git.File{Content: []byte("# T\n\n## Requirements\n\n**R1.** Numbered.\n- Given x, when y, then z.\n\n- The user sees a list.\n- Given a, when b, then c.\n")}, nil)
+	_, err := f.svc.Submit(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, false)
+	tu.Code(t, err, 409, "requirements_without_id")
+	f.store.EXPECT().SaveGate(gomock.Any(), gomock.Any()).Return(nil)
+	f.store.EXPECT().InsertEvent(gomock.Any(), gomock.Any()).Return(nil)
+	if _, err := f.svc.Submit(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, true); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // APPR-05: git has a newer commit than the projection → rejected, nothing written.
@@ -75,8 +125,8 @@ func TestApproveStaleDocument(t *testing.T) {
 	feat := tu.Feature(true)
 	g := tu.Gate(feat, domain.AreaProduct, domain.GateInReview)
 	f.feature(feat, g)
-	f.git.EXPECT().LatestCommit(gomock.Any(), "tok", feat.Branch, "specs/FMS/CAR/FMS.CAR-0005/product").Return("newer", nil)
-	_, err := f.svc.Approve(context.Background(), tu.User("approver:product"), feat.UniqueID, domain.AreaProduct)
+	f.git.EXPECT().LatestCommit(gomock.Any(), "tok", feat.Branch, "specs/FMS/CAR/FTR.FMS.CAR-0005/product").Return("newer", nil)
+	_, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct)
 	tu.Code(t, err, 409, "document_changed")
 }
 
@@ -99,7 +149,7 @@ func TestApproveSetsApprovedCommit(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := f.svc.Approve(context.Background(), tu.User("approver:product"), feat.UniqueID, domain.AreaProduct); err != nil {
+	if _, err := f.svc.Approve(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -109,7 +159,7 @@ func TestSubmitInDomainWithoutApproval(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(false)
 	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
-	_, err := f.svc.Submit(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct)
+	_, err := f.svc.Submit(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, false)
 	tu.Code(t, err, 409, "approval_disabled")
 }
 
@@ -117,10 +167,10 @@ func TestSubmitInDomainWithoutApproval(t *testing.T) {
 func TestSubmit(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	f.feature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
+	f.feature(feat, tu.Gate(feat, domain.AreaDesign, domain.GateDraft))
 	f.store.EXPECT().SaveGate(gomock.Any(), gomock.Any()).Return(nil)
 	f.store.EXPECT().InsertEvent(gomock.Any(), gomock.Any()).Return(nil)
-	g, err := f.svc.Submit(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct)
+	g, err := f.svc.Submit(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaDesign, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,10 +179,10 @@ func TestSubmit(t *testing.T) {
 	}
 }
 
-// HOME-02: users without approver roles get an empty queue.
-func TestListWithoutApproverRole(t *testing.T) {
+// Users who are not experts get an empty queue.
+func TestListWithoutExpertRole(t *testing.T) {
 	f := setup(t)
-	l, err := f.svc.List(context.Background(), tu.User("editor:product"), pageOf())
+	l, err := f.svc.List(context.Background(), tu.User("admin:product"), pageOf())
 	if err != nil || len(l.Items) != 0 {
 		t.Fatalf("got %v %v", l, err)
 	}

@@ -21,7 +21,7 @@ import (
 
 // Topics.
 const (
-	TopicGitPush = "hammurapi.git.push"
+	TopicGitPush = "hammurapi.git"
 	TopicImports = "hammurapi.imports"
 )
 

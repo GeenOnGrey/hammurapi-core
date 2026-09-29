@@ -3,11 +3,13 @@ package features
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 
+	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
 	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	emocks "github.com/GeenOnGrey/hammurapi-core/internal/platform/events/mocks"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
@@ -34,82 +36,35 @@ func setup(t *testing.T) *fixture {
 	return f
 }
 
-// FEAT-04
-func TestCreateRequiresProductEditor(t *testing.T) {
-	f := setup(t)
-	_, err := f.svc.Create(context.Background(), tu.User("editor:design"), CreateInput{Domain: "FMS", System: "CAR", Title: "X"})
-	tu.Code(t, err, 403, "forbidden")
-}
-
-// FEAT-05
-func TestCreateUnknownSystem(t *testing.T) {
-	f := setup(t)
-	f.store.EXPECT().SystemByKeys(gomock.Any(), "FMS", "NOPE").Return(nil, specdata.ErrNotFound)
-	_, err := f.svc.Create(context.Background(), tu.User("editor:product"), CreateInput{Domain: "FMS", System: "NOPE", Title: "X"})
-	tu.Code(t, err, 422, "unknown_system")
-}
-
-// FIX-02: a fix needs a handed-off parent.
-func TestCreateFixOfFeatureInProgress(t *testing.T) {
-	f := setup(t)
-	parent := tu.Feature(true)
-	f.store.EXPECT().FeatureByUniqueID(gomock.Any(), parent.UniqueID).Return(parent, nil)
-	uid := parent.UniqueID
-	_, err := f.svc.Create(context.Background(), tu.User("editor:product"), CreateInput{Title: "Fix", Parent: &uid})
-	tu.Code(t, err, 422, "parent_not_handed_off")
-}
-
-// FEAT-01 / FEAT-03: the happy path commits the template to the new branch; a
-// failing commit deletes the branch and rolls the transaction (and number) back.
-func TestCreate(t *testing.T) {
+// DSC-09: the product gate gets the success metric; a failing commit deletes the branch.
+func TestCreateFromIssueGitFailure(t *testing.T) {
 	sys := &specdata.System{ID: uuid.New(), DomainKey: "FMS", Key: "CAR", ApprovalRequired: true}
-	for _, commitFails := range []bool{false, true} {
-		f := setup(t)
-		f.store.EXPECT().SystemByKeys(gomock.Any(), "FMS", "CAR").Return(sys, nil)
-		var txErr error
-		f.store.EXPECT().InTx(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, fn func(specdata.Store) error) error {
-			txErr = fn(f.store)
-			return txErr
-		})
-		f.store.EXPECT().NextNumber(gomock.Any(), sys.ID).Return(8, nil)
-		f.git.EXPECT().BranchHead(gomock.Any(), "tok", "main").Return("base", nil)
-		f.git.EXPECT().GetFile(gomock.Any(), "tok", "main", "rules/product/template.md").
-			Return(&git.File{Content: []byte("# Product spec: <feature title>\n\n## Problem\n")}, nil)
-		f.git.EXPECT().CreateBranch(gomock.Any(), "tok", "feature/FMS.CAR-0008", "base").Return(nil)
-		commit := f.git.EXPECT().Commit(gomock.Any(), "tok", "feature/FMS.CAR-0008", gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, _, _, msg string, ch []git.FileChange) (string, error) {
-				if ch[0].Path != "specs/FMS/CAR/FMS.CAR-0008/product/spec.md" || string(ch[0].Content) != "# Product spec: Weekend booking\n\n## Problem\n" {
-					t.Fatalf("unexpected change %s %q", ch[0].Path, ch[0].Content)
-				}
-				if tr := git.ParseTrailers(msg); tr.Feature != "FMS.CAR-0008" || tr.Area != "product" {
-					t.Fatalf("trailers %+v", tr)
-				}
-				return "c1", nil
-			})
-		if commitFails {
-			commit.Return("", errors.New("rate limited"))
-			f.git.EXPECT().DeleteBranch(gomock.Any(), "tok", "feature/FMS.CAR-0008").Return(nil)
-		} else {
-			f.git.EXPECT().CreatePR(gomock.Any(), "tok", "feature/FMS.CAR-0008", "main", gomock.Any(), gomock.Any()).Return(&git.PR{Number: 7, URL: "u"}, nil)
-			f.store.EXPECT().InsertFeature(gomock.Any(), gomock.Any()).Return(nil)
-			f.store.EXPECT().InsertGate(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, g *specdata.Gate) error {
-				if g.Area != domain.AreaProduct || g.Status != domain.GateDraft || g.HeadCommit != "c1" {
-					t.Fatalf("gate %+v", g)
-				}
-				return nil
-			})
-			f.store.EXPECT().InsertEvent(gomock.Any(), gomock.Any()).Return(nil)
-		}
-		feat, err := f.svc.Create(context.Background(), tu.User("editor:product"), CreateInput{Domain: "FMS", System: "CAR", Title: "Weekend booking"})
-		if commitFails {
-			if err == nil || txErr == nil {
-				t.Fatal("expected failure with rolled back transaction")
+	f := setup(t)
+	f.store.EXPECT().NextNumber(gomock.Any(), sys.ID).Return(8, nil)
+	f.git.EXPECT().BranchHead(gomock.Any(), "tok", "main").Return("base", nil)
+	f.git.EXPECT().GetFile(gomock.Any(), "tok", "main", "rules/product/template.md").
+		Return(&git.File{Content: []byte("# Product spec: <feature title>\n\n## Success metrics\n\nHow.\n")}, nil)
+	f.git.EXPECT().CreateBranch(gomock.Any(), "tok", "feature/FTR.FMS.CAR-0008", "base").Return(nil)
+	f.git.EXPECT().Commit(gomock.Any(), "tok", "feature/FTR.FMS.CAR-0008", gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _, msg string, ch []git.FileChange) (string, error) {
+			if ch[0].Path != "specs/FMS/CAR/FTR.FMS.CAR-0008/product/spec.md" || !strings.Contains(string(ch[0].Content), "| bookings | `SELECT 1` | +5% | 14d |") {
+				t.Fatalf("unexpected product doc %s %q", ch[0].Path, ch[0].Content)
 			}
-			continue
-		}
-		if err != nil || feat.UniqueID != "FMS.CAR-0008" {
-			t.Fatalf("got %v %v", feat, err)
-		}
+			if len(ch) != 2 || ch[1].Path != "specs/FMS/CAR/FTR.FMS.CAR-0008/discovery.md" {
+				t.Fatalf("discovery.md missing: %+v", ch)
+			}
+			if tr := git.ParseTrailers(msg); tr.Feature != "FTR.FMS.CAR-0008" || tr.Area != "product" {
+				t.Fatalf("trailers %+v", tr)
+			}
+			return "", errors.New("rate limited")
+		})
+	f.git.EXPECT().DeleteBranch(gomock.Any(), "tok", "feature/FTR.FMS.CAR-0008").Return(nil)
+	_, err := f.svc.CreateFromIssue(context.Background(), f.store, tu.User("expert:FMS:product"), FromIssue{
+		System: sys, Title: "Weekend booking", Discovery: "# Discovery\n",
+		Measure: &cycledata.Measure{Source: "bookings", Query: "SELECT 1", Target: "+5%", Window: "14d"},
+	})
+	if err == nil {
+		t.Fatal("expected failure")
 	}
 }
 
@@ -126,47 +81,37 @@ func (f *fixture) withFeature(feat *specdata.Feature, gates ...*specdata.Gate) {
 func TestDeleteConfirmMismatch(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	f.withFeature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
-	err := f.svc.Delete(context.Background(), tu.User("editor:product"), feat.UniqueID, "FMS.CAR-0006")
+	f.withFeature(feat)
+	err := f.svc.Delete(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, "FTR.FMS.CAR-0006")
 	tu.Code(t, err, 422, "confirm_mismatch")
 }
 
-// DEL-09: editor role needed in every area; a global admin may always delete.
-func TestDeleteRequiresEditorOfAllAreas(t *testing.T) {
+// ROLE-03: an expert of another domain cannot delete.
+func TestDeleteRequiresDomainExpert(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	f.withFeature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft), tu.Gate(feat, domain.AreaDesign, domain.GateDraft))
-	err := f.svc.Delete(context.Background(), tu.User("editor:product"), feat.UniqueID, feat.UniqueID)
+	f.withFeature(feat)
+	err := f.svc.Delete(context.Background(), tu.User("expert:PAY:technical"), feat.UniqueID, feat.UniqueID)
 	tu.Code(t, err, 403, "forbidden")
-
-	f.store.EXPECT().GetLock(gomock.Any(), feat.ID).Return(nil, nil)
-	f.git.EXPECT().ClosePR(gomock.Any(), "tok", feat.PRNumber).Return(nil)
-	f.git.EXPECT().DeleteBranch(gomock.Any(), "tok", feat.Branch).Return(errors.New("provider down"))
-	tu.PassThroughTx(f.store)
-	f.store.EXPECT().MarkDeleted(gomock.Any(), feat.ID, gomock.Any(), true).Return(nil) // DEL-15: cleaner retries
-	f.store.EXPECT().DropLock(gomock.Any(), feat.ID).Return(nil)
-	if err := f.svc.Delete(context.Background(), tu.User("global"), feat.UniqueID, feat.UniqueID); err != nil {
-		t.Fatal(err)
-	}
 }
 
-// DEL-10
-func TestDeleteHandedOff(t *testing.T) {
+// A feature cannot be deleted once its release exists.
+func TestDeleteAfterRelease(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	feat.Status = domain.FeatureHandedOff
+	feat.Phase = domain.PhaseInRelease
 	f.withFeature(feat)
 	err := f.svc.Delete(context.Background(), tu.User("global"), feat.UniqueID, feat.UniqueID)
-	tu.Code(t, err, 409, "feature_handed_off")
+	tu.Code(t, err, 409, "release_exists")
 }
 
 // DEL-11
 func TestDeleteLockedByOther(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	f.withFeature(feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
+	f.withFeature(feat)
 	f.store.EXPECT().GetLock(gomock.Any(), feat.ID).Return(&specdata.Lock{LockedBy: uuid.New(), LockedByName: "Anna"}, nil)
-	err := f.svc.Delete(context.Background(), tu.User("editor:product"), feat.UniqueID, feat.UniqueID)
+	err := f.svc.Delete(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, feat.UniqueID)
 	tu.Code(t, err, 423, "feature_locked")
 }
 
@@ -174,7 +119,7 @@ func TestDeleteLockedByOther(t *testing.T) {
 func TestLoadDeleted(t *testing.T) {
 	f := setup(t)
 	feat := tu.Feature(true)
-	feat.Status = domain.FeatureDeleted
+	feat.Phase = domain.PhaseDeleted
 	name := "Eugene"
 	feat.DeletedByName = &name
 	f.store.EXPECT().FeatureByUniqueID(gomock.Any(), feat.UniqueID).Return(feat, nil)
@@ -188,21 +133,66 @@ func TestLockTakenByOther(t *testing.T) {
 	feat := tu.Feature(true)
 	f.withFeature(feat)
 	f.store.EXPECT().AcquireLock(gomock.Any(), feat.ID, gomock.Any()).Return(&specdata.Lock{LockedByName: "Anna"}, false, nil)
-	_, err := f.svc.Lock(context.Background(), tu.User("editor:product"), feat.UniqueID)
+	_, err := f.svc.Lock(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID)
 	tu.Code(t, err, 409, "feature_locked")
 }
 
-// NOAPR-04 / HAND-01: permissions reflect approval settings.
+// CG-03: specifications are read-only during code generation; RB-08: nothing after rollback.
+func TestLockOutsideSpecPhase(t *testing.T) {
+	for phase, code := range map[domain.FeaturePhase]string{domain.PhaseCodegen: "codegen_in_progress", domain.PhaseRolledBack: "feature_read_only"} {
+		f := setup(t)
+		feat := tu.Feature(true)
+		feat.Phase = phase
+		f.withFeature(feat)
+		_, err := f.svc.Lock(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID)
+		tu.Code(t, err, 409, code)
+	}
+}
+
+// GEN-08 / GEN-09 / ROLE-02: permissions by expert kind; tech and qa are not editable.
 func TestPermissions(t *testing.T) {
-	feat := tu.Feature(false)
-	gates := []specdata.Gate{*tu.Gate(feat, domain.AreaProduct, domain.GateDraft)}
-	p := permissions(tu.User("editor:product", "approver:product"), feat, gates)
-	if len(p.Submit) != 0 || len(p.Approve) != 0 || !p.Handoff {
+	feat := tu.Feature(true)
+	gates := []specdata.Gate{
+		*tu.Gate(feat, domain.AreaProduct, domain.GateInReview),
+		*tu.Gate(feat, domain.AreaArch, domain.GateInReview),
+		*tu.Gate(feat, domain.AreaTech, domain.GateDraft),
+	}
+	p := PermissionsOf(tu.User("expert:FMS:product"), feat, gates)
+	if len(p.Approve) != 1 || p.Approve[0] != domain.AreaProduct {
+		t.Fatalf("product expert approves %v", p.Approve)
+	}
+	for _, a := range p.Edit {
+		if a.Generated() {
+			t.Fatalf("generated gate editable: %v", p.Edit)
+		}
+	}
+	p = PermissionsOf(tu.User("expert:FMS:technical"), feat, gates)
+	if len(p.Approve) != 1 || p.Approve[0] != domain.AreaArch {
+		t.Fatalf("technical expert approves %v", p.Approve)
+	}
+	p = PermissionsOf(tu.User("admin:product"), feat, gates)
+	if len(p.Edit) != 0 || p.Delete {
+		t.Fatalf("non-expert: %+v", p)
+	}
+	// CG-01 / CG-02: codegen needs approvals only when the domain requires them.
+	if p := PermissionsOf(tu.User("expert:FMS:product"), feat, gates); p.Codegen {
+		t.Fatal("codegen allowed without approvals and without qa")
+	}
+	feat.ApprovalRequired = false
+	gates = append(gates, *tu.Gate(feat, domain.AreaQA, domain.GateDraft))
+	if p := PermissionsOf(tu.User("expert:FMS:product"), feat, gates); !p.Codegen || len(p.Submit) != 0 {
 		t.Fatalf("no-approval domain: %+v", p)
 	}
-	feat.ApprovalRequired = true
-	p = permissions(tu.User("editor:product"), feat, gates)
-	if len(p.Submit) != 1 || p.Handoff || len(p.DeleteGate) != 0 || !p.Delete {
-		t.Fatalf("approval domain: %+v", p)
+}
+
+func TestHumanGatesApproved(t *testing.T) {
+	feat := tu.Feature(true)
+	gates := []specdata.Gate{*tu.Gate(feat, domain.AreaProduct, domain.GateApproved), *tu.Gate(feat, domain.AreaTech, domain.GateDraft)}
+	if !HumanGatesApproved(gates) {
+		t.Fatal("generated gates must not block generation")
+	}
+	gates = append(gates, *tu.Gate(feat, domain.AreaDesign, domain.GateInReview))
+	if HumanGatesApproved(gates) {
+		t.Fatal("design is in review")
 	}
 }

@@ -107,21 +107,13 @@ func TestRepositories(t *testing.T) {
 		t.Fatalf("session %+v", sess)
 	}
 
-	// Admin: roles, last global admin (ADM-11), user list.
+	// Admin: roles without editor/approver (ROLE-01), last global admin (ADM-11), user list.
 	adm := admin.NewService(pool)
-	must(t, adm.SetRoles(ctx, u.ID, admin.RolesInput{GlobalAdmin: true, Roles: []auth.RoleAreas{
-		{Role: domain.RoleEditor, Areas: []domain.Area{domain.AreaProduct, domain.AreaDesign}},
-		{Role: domain.RoleApprover, Areas: []domain.Area{domain.AreaProduct}},
-	}}))
+	must(t, adm.SetRoles(ctx, u.ID, admin.RolesInput{GlobalAdmin: true, AreaAdmin: []domain.Area{domain.AreaProduct}}))
 	tu.Code(t, adm.SetRoles(ctx, u.ID, admin.RolesInput{GlobalAdmin: false}), 409, "last_global_admin")
-	users, err := adm.Users(ctx, "ann", httpx.Page{Limit: 10})
-	must(t, err)
-	if len(users) != 1 || len(users[0].Roles) != 2 {
-		t.Fatalf("users %+v", users)
-	}
 	p, err := authRepo.Principal(ctx, u.ID)
 	must(t, err)
-	if !p.Has(domain.RoleApprover, domain.AreaProduct) || !p.GlobalAdmin {
+	if !p.IsAreaAdmin(domain.AreaProduct) || !p.GlobalAdmin {
 		t.Fatalf("principal %+v", p)
 	}
 	days, err := admin.RetentionDays(ctx, pool)
@@ -131,7 +123,7 @@ func TestRepositories(t *testing.T) {
 	}
 
 	// Dictionary (NOAPR-01/02/03, ADM-03).
-	ds := domains.NewService(domains.NewRepository(pool), nopEvents{})
+	ds := domains.NewService(pool, nopEvents{})
 	must(t, ds.CreateDomain(ctx, p, "FMS", "Fleet", true))
 	must(t, ds.CreateDomain(ctx, p, "CRM", "Clients", false))
 	tu.Code(t, ds.CreateDomain(ctx, p, "FMS", "Again", true), 409, "key_exists")
@@ -143,10 +135,28 @@ func TestRepositories(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("changed %d, want 2", n)
 	}
+	// Experts per domain and kind (CAT-08: allowed with Backstage too).
+	must(t, ds.SetExperts(ctx, p, "FMS", domains.ExpertsInput{Product: []uuid.UUID{u.ID}, Technical: []uuid.UUID{u.ID}}))
 	list, err := domains.NewRepository(pool).List(ctx)
 	must(t, err)
-	if len(list) != 2 || len(list[1].Systems) != 1 {
+	var fms *domains.Domain
+	for i := range list {
+		if list[i].Key == "FMS" {
+			fms = &list[i]
+		}
+	}
+	if fms == nil || len(fms.Systems) != 1 || len(fms.Experts.Product) != 1 || fms.Source != "manual" {
 		t.Fatalf("domains %+v", list)
+	}
+	p, err = authRepo.Principal(ctx, u.ID)
+	must(t, err)
+	if !p.HasExpert("FMS", domain.ExpertTechnical) || !p.CanApprove("FMS", domain.AreaQA) {
+		t.Fatalf("principal %+v", p)
+	}
+	users, err := adm.Users(ctx, "ann", httpx.Page{Limit: 10})
+	must(t, err)
+	if len(users) != 1 || len(users[0].AreaAdmin) != 1 || len(users[0].Experts) != 1 {
+		t.Fatalf("users %+v", users)
 	}
 
 	// Profile: my domains drive the "mine" filter (PROF-03).
@@ -169,8 +179,8 @@ func TestRepositories(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		f = &specdata.Feature{UniqueID: domain.FormatUniqueID("FMS", "CAR", num), SystemID: sys.ID, Number: num, Title: "Weekend booking",
-			Branch: "feature/FMS.CAR-0001", PRNumber: 1, PRURL: "u", CreatedBy: u.ID}
+		f = &specdata.Feature{UniqueID: domain.FeatureKey("FMS", "CAR", num), SystemID: sys.ID, Number: num, Title: "Weekend booking",
+			Branch: "feature/FTR.FMS.CAR-0001", PRNumber: 1, PRURL: "u", Phase: domain.PhaseSpec, CreatedBy: u.ID}
 		if err := tx.InsertFeature(ctx, f); err != nil {
 			return err
 		}
@@ -184,15 +194,15 @@ func TestRepositories(t *testing.T) {
 		}
 		return tx.InsertEvent(ctx, &specdata.GateEvent{GateID: g.ID, Type: domain.EventCreated, ActorID: &u.ID, CommitSHA: &g.HeadCommit})
 	}))
-	got, err := store.FeatureByUniqueID(ctx, "FMS.CAR-0001")
+	got, err := store.FeatureByUniqueID(ctx, "FTR.FMS.CAR-0001")
 	must(t, err)
 	if got.DomainKey != "FMS" || !got.ApprovalRequired || got.CreatedByName != "Anna" {
 		t.Fatalf("feature %+v", got)
 	}
 	for _, filter := range []specdata.ListFilter{
-		{UserID: u.ID, Domain: "mine", Status: "in_progress", Page: httpx.Page{Limit: 10}},
-		{UserID: u.ID, Domain: "FMS", Status: "all", Query: "weekend", Page: httpx.Page{Limit: 10}},
-		{UserID: u.ID, Domain: "all", Status: "all", Query: "FMS.CAR", Page: httpx.Page{Limit: 10, Cursor: &httpx.Cursor{T: time.Now().Add(time.Hour), ID: "z"}}},
+		{UserID: u.ID, Domain: "mine", Status: "active", Page: httpx.Page{Limit: 10}},
+		{UserID: u.ID, Domain: "FMS", Status: "all", Phase: "spec", Query: "weekend", Page: httpx.Page{Limit: 10}},
+		{UserID: u.ID, Domain: "all", Status: "all", Query: "FTR.FMS.CAR", Page: httpx.Page{Limit: 10, Cursor: &httpx.Cursor{T: time.Now().Add(time.Hour), ID: "z"}}},
 	} {
 		items, err := store.ListFeatures(ctx, filter)
 		must(t, err)
@@ -244,7 +254,7 @@ func TestRepositories(t *testing.T) {
 	if len(pend) != 1 {
 		t.Fatal("cleanup queue")
 	}
-	items, err := store.ListFeatures(ctx, specdata.ListFilter{UserID: u.ID, Domain: "all", Status: "all", Page: httpx.Page{Limit: 10}})
+	items, err := store.ListFeatures(ctx, specdata.ListFilter{UserID: u.ID, Domain: "FMS", Status: "all", Page: httpx.Page{Limit: 10}})
 	must(t, err)
 	if len(items) != 0 {
 		t.Fatal("deleted feature listed")
@@ -257,7 +267,7 @@ func TestRepositories(t *testing.T) {
 
 	// Chat history and attachments.
 	chat := agent.NewRepository(pool)
-	mid, _, err := chat.Insert(ctx, pool, u.ID, "user", "general", nil, nil, "hello", true)
+	mid, _, err := chat.Insert(ctx, pool, u.ID, "user", "general", nil, "hello", true)
 	must(t, err)
 	att := attachments.NewService(pool, nil, 1<<20, nil)
 	if _, err := pool.Exec(ctx, `INSERT INTO attachments (user_id, file_name, mime_type, size_bytes, s3_key) VALUES ($1,'a.png','image/png',1,'k1')`, u.ID); err != nil {

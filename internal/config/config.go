@@ -16,8 +16,16 @@ type Config struct {
 	// HTTP
 	HTTPAddr    string // user API, admin API, hooks
 	ServiceAddr string // healthz, readyz, metrics
-	MCPAddr     string // internal MCP endpoint for the agent
-	PublicURL   string // external URL of the web app, used for OAuth redirects and cookies
+	MCPAddr     string // deprecated alias of InternalAddr
+	// InternalAddr serves the chat MCP endpoint and the runner API (/internal/v1) — cluster-internal only.
+	InternalAddr string
+	// InternalURL is how agent processes and runner tasks reach InternalAddr.
+	InternalURL string
+	// WorkerMCPAddr is the worker's own MCP endpoint for Discovery, generation and checks.
+	WorkerMCPAddr string
+	PublicURL     string // external URL of the web app, used for OAuth redirects and cookies
+	// HooksURL is the base URL of /hooks/v1/* as reachable by CI/CD (deploy result callbacks); defaults to PublicURL.
+	HooksURL string
 
 	// Git provider
 	GitProvider      string // github | gitlab
@@ -32,6 +40,9 @@ type Config struct {
 	GitLabClientID   string
 	GitLabSecret     string
 	WebhookSecret    string
+	GitLabBotToken   string
+	BotLogin         string // provider login of the bot (agent PRs, own review replies)
+	CIResultsSecret  []string
 
 	// Agent
 	ACPCommand     string
@@ -64,6 +75,22 @@ type Config struct {
 	ImportMaxUncompressedBytes int64
 	ImportMaxFiles             int
 	ImportAllowedAssetTypes    []string
+
+	// Runner (PLT.HMR-0002 arch §15)
+	RunnerExecutor        string // k8s | local
+	RunnerNamespace       string
+	RunnerImage           string
+	RunnerTimeout         time.Duration
+	RunnerTokenLimit      int64
+	RunnerMaxParallel     int
+	RunnerMaxParallelRepo int
+	RunnerWorkdir         string
+	RunnerCPU             string
+	RunnerMemory          string
+	RunnerAgentSecret     string // Kubernetes Secret with agent credentials for runner pods
+	WorkflowMaxAttempts   int
+	WorkflowLease         time.Duration
+	DiscoveryTimeout      time.Duration
 }
 
 // DefaultUploadTypes is the default allow-list of chat attachment MIME types.
@@ -88,38 +115,71 @@ var DefaultImportAssetTypes = []string{
 // Load reads configuration from the environment. Mode-specific requirements are checked by Validate.
 func Load() (*Config, error) {
 	c := &Config{
-		HTTPAddr:         env("HTTP_ADDR", ":8080"),
-		ServiceAddr:      env("SERVICE_ADDR", ":9100"),
-		MCPAddr:          env("MCP_ADDR", "127.0.0.1:8081"),
-		PublicURL:        strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
-		GitProvider:      strings.ToLower(env("GIT_PROVIDER", "")),
-		GitBaseURL:       strings.TrimRight(env("GIT_BASE_URL", ""), "/"),
-		GitRepo:          env("GIT_REPO", ""),
-		GitDefaultBranch: env("GIT_DEFAULT_BRANCH", "main"),
-		GitHubAppID:      env("GITHUB_APP_ID", ""),
-		GitHubPrivateKey: env("GITHUB_APP_PRIVATE_KEY", ""),
-		GitHubClientID:   env("GITHUB_CLIENT_ID", ""),
-		GitHubSecret:     env("GITHUB_CLIENT_SECRET", ""),
-		GitLabClientID:   env("GITLAB_CLIENT_ID", ""),
-		GitLabSecret:     env("GITLAB_CLIENT_SECRET", ""),
-		WebhookSecret:    env("WEBHOOK_SECRET", ""),
-		ACPCommand:       env("ACP_AGENT_COMMAND", ""),
-		ACPArgs:          strings.Fields(env("ACP_AGENT_ARGS", "")),
-		ACPEnv:           splitList(env("ACP_AGENT_ENV", ""), ";"),
-		BootstrapAdmins:  splitList(env("BOOTSTRAP_ADMINS", ""), ","),
-		DatabaseURL:      env("DATABASE_URL", ""),
-		KafkaBrokers:     splitList(env("KAFKA_BROKERS", ""), ","),
-		S3Endpoint:       env("S3_ENDPOINT", ""),
-		S3Bucket:         env("S3_BUCKET", "hammurapi"),
-		S3AccessKey:      env("S3_ACCESS_KEY", ""),
-		S3SecretKey:      env("S3_SECRET_KEY", ""),
-		WhisperURL:       strings.TrimRight(env("WHISPER_URL", ""), "/"),
-		OTLPEndpoint:     env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-		LogLevel:         env("LOG_LEVEL", "info"),
-		DefaultLanguage:  env("DEFAULT_LANGUAGE", "en"),
+		HTTPAddr:          env("HTTP_ADDR", ":8080"),
+		ServiceAddr:       env("SERVICE_ADDR", ":9100"),
+		MCPAddr:           env("MCP_ADDR", ""),
+		InternalAddr:      env("INTERNAL_ADDR", env("MCP_ADDR", ":8081")),
+		WorkerMCPAddr:     env("WORKER_MCP_ADDR", "127.0.0.1:8083"),
+		PublicURL:         strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
+		GitProvider:       strings.ToLower(env("GIT_PROVIDER", "")),
+		GitBaseURL:        strings.TrimRight(env("GIT_BASE_URL", ""), "/"),
+		GitRepo:           env("GIT_REPO", ""),
+		GitDefaultBranch:  env("GIT_DEFAULT_BRANCH", "main"),
+		GitHubAppID:       env("GITHUB_APP_ID", ""),
+		GitHubPrivateKey:  env("GITHUB_APP_PRIVATE_KEY", ""),
+		GitHubClientID:    env("GITHUB_CLIENT_ID", ""),
+		GitHubSecret:      env("GITHUB_CLIENT_SECRET", ""),
+		GitLabClientID:    env("GITLAB_CLIENT_ID", ""),
+		GitLabSecret:      env("GITLAB_CLIENT_SECRET", ""),
+		WebhookSecret:     env("WEBHOOK_SECRET", ""),
+		GitLabBotToken:    env("GITLAB_BOT_TOKEN", ""),
+		BotLogin:          env("HAMMURAPI_BOT_LOGIN", ""),
+		CIResultsSecret:   splitList(env("CI_RESULTS_SECRET", ""), ","),
+		RunnerExecutor:    strings.ToLower(env("RUNNER_EXECUTOR", "k8s")),
+		RunnerNamespace:   env("RUNNER_NAMESPACE", "hammurapi-runners"),
+		RunnerImage:       env("RUNNER_IMAGE", ""),
+		RunnerWorkdir:     env("RUNNER_WORKDIR", "/var/lib/hammurapi/runs"),
+		RunnerCPU:         env("RUNNER_CPU", "2"),
+		RunnerMemory:      env("RUNNER_MEMORY", "4Gi"),
+		RunnerAgentSecret: env("RUNNER_AGENT_SECRET", ""),
+		ACPCommand:        env("ACP_AGENT_COMMAND", ""),
+		ACPArgs:           strings.Fields(env("ACP_AGENT_ARGS", "")),
+		ACPEnv:            splitList(env("ACP_AGENT_ENV", ""), ";"),
+		BootstrapAdmins:   splitList(env("BOOTSTRAP_ADMINS", ""), ","),
+		DatabaseURL:       env("DATABASE_URL", ""),
+		KafkaBrokers:      splitList(env("KAFKA_BROKERS", ""), ","),
+		S3Endpoint:        env("S3_ENDPOINT", ""),
+		S3Bucket:          env("S3_BUCKET", "hammurapi"),
+		S3AccessKey:       env("S3_ACCESS_KEY", ""),
+		S3SecretKey:       env("S3_SECRET_KEY", ""),
+		WhisperURL:        strings.TrimRight(env("WHISPER_URL", ""), "/"),
+		OTLPEndpoint:      env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		LogLevel:          env("LOG_LEVEL", "info"),
+		DefaultLanguage:   env("DEFAULT_LANGUAGE", "en"),
 	}
 	var err error
 	if c.ACPMaxProcs, err = envInt("ACP_MAX_PROCESSES", 4); err != nil {
+		return nil, err
+	}
+	if c.RunnerTimeout, err = envDuration("RUNNER_TIMEOUT", 2*time.Hour); err != nil {
+		return nil, err
+	}
+	if c.RunnerTokenLimit, err = envInt64("RUNNER_TOKEN_LIMIT", 3_000_000); err != nil {
+		return nil, err
+	}
+	if c.RunnerMaxParallel, err = envInt("RUNNER_MAX_PARALLEL", 10); err != nil {
+		return nil, err
+	}
+	if c.RunnerMaxParallelRepo, err = envInt("RUNNER_MAX_PARALLEL_PER_REPO", 1); err != nil {
+		return nil, err
+	}
+	if c.WorkflowMaxAttempts, err = envInt("WORKFLOW_MAX_ATTEMPTS", 8); err != nil {
+		return nil, err
+	}
+	if c.WorkflowLease, err = envDuration("WORKFLOW_LEASE", 2*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.DiscoveryTimeout, err = envDuration("DISCOVERY_TIMEOUT", 20*time.Minute); err != nil {
 		return nil, err
 	}
 	if c.ACPIdleTimeout, err = envDuration("ACP_SESSION_IDLE_TIMEOUT", 30*time.Minute); err != nil {
@@ -165,7 +225,20 @@ func Load() (*Config, error) {
 	if c.GitOAuthURL == "" {
 		c.GitOAuthURL = c.GitBaseURL
 	}
+	c.InternalURL = strings.TrimRight(env("INTERNAL_URL", "http://"+localAddr(c.InternalAddr)), "/")
+	c.HooksURL = strings.TrimRight(env("HOOKS_URL", c.PublicURL), "/")
+	if c.RunnerExecutor != "k8s" && c.RunnerExecutor != "local" {
+		return nil, fmt.Errorf("RUNNER_EXECUTOR must be k8s or local, got %q", c.RunnerExecutor)
+	}
 	return c, nil
+}
+
+// localAddr turns ":8081" into "127.0.0.1:8081".
+func localAddr(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "127.0.0.1" + addr
+	}
+	return addr
 }
 
 // Validate checks the parameters required by the given binary mode.

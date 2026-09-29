@@ -22,29 +22,48 @@ import (
 	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/admin"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/agentrun"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/approvals"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/attachments"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/catalog"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/ciresults"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/codegen"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/deploy"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/discovery"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/domains"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/features"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/feedback"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/flags"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/gategen"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/gates"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/handoff"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/imports"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/issues"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/metricsources"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/overview"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/profile"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/releases"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/rollback"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/rules"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/runner"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/services"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/validation"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/voice"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/webhooks"
+	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
 	"github.com/GeenOnGrey/hammurapi-core/internal/jobs/cleaner"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/cicd"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/crypto"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/executor"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/kafka"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/signing"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/storage"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/whisper"
 	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
@@ -60,6 +79,19 @@ type core struct {
 	store    *specdata.PG
 	s3       storage.Storage
 	events   *events.PGPublisher
+	secrets  *signing.Secrets
+}
+
+// NewProvider builds the git provider with the bot identity (GitHub App or GitLab bot token).
+func NewProvider(cfg *config.Config) (git.Provider, error) {
+	switch cfg.GitProvider {
+	case "github":
+		gh := git.NewGitHub(cfg.GitBaseURL, cfg.GitOAuthURL, cfg.GitRepo, cfg.GitHubClientID, cfg.GitHubSecret)
+		return gh.WithApp(cfg.GitHubAppID, cfg.GitHubPrivateKey)
+	case "gitlab":
+		return git.NewGitLab(cfg.GitBaseURL, cfg.GitOAuthURL, cfg.GitRepo, cfg.GitLabClientID, cfg.GitLabSecret).WithBot(cfg.GitLabBotToken), nil
+	}
+	return nil, fmt.Errorf("unknown git provider %q", cfg.GitProvider)
 }
 
 func newCore(ctx context.Context, cfg *config.Config) (*core, error) {
@@ -67,12 +99,9 @@ func newCore(ctx context.Context, cfg *config.Config) (*core, error) {
 	if err != nil {
 		return nil, err
 	}
-	var provider git.Provider
-	switch cfg.GitProvider {
-	case "github":
-		provider = git.NewGitHub(cfg.GitBaseURL, cfg.GitOAuthURL, cfg.GitRepo, cfg.GitHubClientID, cfg.GitHubSecret)
-	case "gitlab":
-		provider = git.NewGitLab(cfg.GitBaseURL, cfg.GitOAuthURL, cfg.GitRepo, cfg.GitLabClientID, cfg.GitLabSecret)
+	provider, err := NewProvider(cfg)
+	if err != nil {
+		return nil, err
 	}
 	box, err := crypto.NewBox(cfg.TokenEncryptionKey)
 	if err != nil {
@@ -86,7 +115,7 @@ func newCore(ctx context.Context, cfg *config.Config) (*core, error) {
 	return &core{
 		cfg: cfg, pool: pool, provider: provider, authRepo: authRepo,
 		authSvc: auth.NewService(authRepo, provider, box, cfg.PublicURL, cfg.BootstrapAdmins, cfg.DefaultLanguage),
-		store:   specdata.NewPG(pool), s3: s3, events: events.NewPGPublisher(pool),
+		store:   specdata.NewPG(pool), s3: s3, events: events.NewPGPublisher(pool), secrets: signing.NewSecrets(box),
 	}, nil
 }
 
@@ -149,7 +178,35 @@ func principalLoader(repo *auth.Repository) func(context.Context, uuid.UUID) (*d
 	}
 }
 
-// RunAPI runs the HTTP API, SSE, webhooks, the agent pool and the internal MCP endpoint.
+// slices are the services shared by the api and the worker.
+type slices struct {
+	gates     *gates.Service
+	features  *features.Service
+	metrics   *metricsources.Service
+	discovery *discovery.Service
+	codegen   *codegen.Service
+	catalog   *catalog.Syncer
+}
+
+func (c *core) slices() *slices {
+	branch := c.cfg.GitDefaultBranch
+	return &slices{
+		gates:     gates.NewService(c.store, c.provider, c.authSvc, c.events, gategen.Generator{Q: c.pool}, branch),
+		features:  features.NewService(c.store, c.provider, c.authSvc, c.events, branch),
+		metrics:   metricsources.NewService(c.pool, c.secrets),
+		discovery: discovery.NewService(c.pool, c.events),
+		codegen:   codegen.NewService(c.store, c.events),
+		catalog:   &catalog.Syncer{Pool: c.pool, Git: c.provider},
+	}
+}
+
+func (c *core) toolDeps(s *slices, loadPrincipal agent.PrincipalLoader) agent.ToolDeps {
+	return agent.ToolDeps{Store: c.store, Git: c.provider, Tokens: c.authSvc, Gates: s.gates, Principal: loadPrincipal,
+		DefaultBranch: c.cfg.GitDefaultBranch, EditDiscovery: s.discovery.AgentEdit, TestMetric: s.metrics.Test}
+}
+
+// RunAPI runs the HTTP API, SSE, webhooks, the chat agent pool and the internal
+// server (:8081: MCP for the chat, the runner API and the runner MCP).
 func RunAPI(ctx context.Context, cfg *config.Config) error {
 	c, err := newCore(ctx, cfg)
 	if err != nil {
@@ -158,6 +215,9 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	defer c.close()
 	if err := kafka.EnsureTopics(ctx, cfg.KafkaBrokers, kafka.TopicGitPush, kafka.TopicImports); err != nil {
 		slog.Warn("could not ensure kafka topics (auto-creation will be used)", "err", err)
+	}
+	if cfg.RunnerExecutor == "local" {
+		slog.Warn("RUNNER_EXECUTOR=local runs agent tasks as subprocesses of the worker without network isolation; it is meant for development and demos, not for production")
 	}
 	producer := kafka.NewProducer(cfg.KafkaBrokers)
 	defer producer.Close()
@@ -168,31 +228,43 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	tokens := c.authSvc
 	branch := cfg.GitDefaultBranch
 	loadPrincipal := principalLoader(c.authRepo)
+	sl := c.slices()
 
-	featureSvc := features.NewService(c.store, c.provider, tokens, c.events, branch)
-	gateSvc := gates.NewService(c.store, c.provider, tokens, c.events, branch)
-	approvalSvc := approvals.NewService(c.store, approvals.NewRepository(c.pool), c.provider, tokens, c.events)
-	handoffSvc := handoff.NewService(c.store, c.provider, tokens, c.events)
-	domainSvc := domains.NewService(domains.NewRepository(c.pool), c.events)
+	approvalSvc := approvals.NewService(c.store, approvals.NewRepository(c.pool), c.provider, tokens, c.events, gategen.Generator{Q: c.pool})
+	domainSvc := domains.NewService(c.pool, c.events)
 	profileSvc := profile.NewService(c.pool)
 	adminSvc := admin.NewService(c.pool)
+	adminSvc.RunnerExecutor = cfg.RunnerExecutor
 	rulesSvc := rules.NewService(c.pool, c.provider, tokens, branch)
 	attSvc := attachments.NewService(c.pool, c.s3, cfg.UploadMaxBytes, cfg.UploadAllowedTypes)
 	importSvc := imports.NewService(c.pool, c.store, c.s3, producer, c.provider, tokens, c.events, rulesSvc, loadPrincipal, imports.Config{
 		MaxBytes: cfg.ImportMaxBytes, DefaultBranch: branch, AllowedAssets: cfg.ImportAllowedAssetTypes,
 		Limits: imports.Limits{MaxUncompressed: cfg.ImportMaxUncompressedBytes, MaxFiles: cfg.ImportMaxFiles},
 	})
+	issueSvc := issues.NewService(c.store, sl.features, sl.metrics, c.events)
+	validationSvc := validation.NewService(c.pool, c.store, c.provider, tokens, c.events)
+	releaseSvc := releases.NewService(c.pool, c.store, c.events)
+	serviceSvc := services.NewService(c.pool, sl.catalog)
+	overviewSvc := overview.NewService(c.pool)
+	trigger := cicd.New(c.provider)
+	deployEffects := &deploy.Effects{Q: c.pool, Trigger: trigger, Secrets: c.secrets, PublicURL: cfg.HooksURL}
+	deployAdmin := &deploy.Admin{Pool: c.pool, Secrets: c.secrets, Effects: deployEffects}
+	flagHook := &flags.Hook{Pool: c.pool, Secrets: c.secrets, Events: c.events}
 
 	mcpServer := mcp.NewServer()
 	var chatSvc *agent.Service
-	pool := acp.NewPool(acp.Config{
+	agentPool := acp.NewPool(acp.Config{
 		Command: cfg.ACPCommand, Args: cfg.ACPArgs, Env: cfg.ACPEnv, MaxProcs: cfg.ACPMaxProcs, IdleTimeout: cfg.ACPIdleTimeout,
 		OnSessionClosed: func(u uuid.UUID) { chatSvc.OnSessionClosed(u) },
 	})
-	defer pool.Close()
-	chatSvc = agent.NewService(agent.NewRepository(c.pool), c.store, pool, mcpServer, "http://"+cfg.MCPAddr+"/mcp", hub, attSvc, loadPrincipal)
-	mcpServer.Register(agent.Tools(agent.ToolDeps{Store: c.store, Git: c.provider, Tokens: tokens, Gates: gateSvc, Principal: loadPrincipal, DefaultBranch: branch})...)
+	defer agentPool.Close()
+	chatSvc = agent.NewService(agent.NewRepository(c.pool), c.store, agentPool, mcpServer, cfg.InternalURL+"/mcp", hub, attSvc, loadPrincipal)
+	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
 	profileSvc.OnAgentChanged = chatSvc.ResetPersona
+
+	internal := &runner.Internal{Pool: c.pool, Store: c.store, Git: c.provider, Events: c.events, MCP: mcpServer, GitBaseURL: cfg.GitBaseURL,
+		PublicURL: cfg.InternalURL, Timeout: cfg.RunnerTimeout, TokenLimit: cfg.RunnerTokenLimit}
+	mcpServer.Resolve = internal.ResolveMCP
 
 	authH := auth.NewHandlers(c.authSvc, auth.PublicConfig{
 		Provider: cfg.GitProvider, UploadMaxBytes: cfg.UploadMaxBytes, UploadTypes: cfg.UploadAllowedTypes,
@@ -210,10 +282,16 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 			profileSvc.Routes(r)
 			feedback.Routes(r, c.provider, tokens)
 			domainSvc.PublicRoutes(r)
-			features.NewHandlers(featureSvc).Routes(r)
-			gates.NewHandlers(gateSvc).Routes(r)
+			overviewSvc.Routes(r)
+			issueSvc.Routes(r)
+			sl.discovery.Routes(r)
+			features.NewHandlers(sl.features).Routes(r)
+			gates.NewHandlers(sl.gates).Routes(r)
 			approvals.NewHandlers(approvalSvc).Routes(r)
-			handoffSvc.Routes(r)
+			sl.codegen.Routes(r)
+			validationSvc.Routes(r)
+			releaseSvc.Routes(r)
+			serviceSvc.Routes(r)
 			chatSvc.Routes(r)
 			voice.Routes(r, whisper.New(cfg.WhisperURL))
 			attSvc.Routes(r)
@@ -226,25 +304,31 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 		adminSvc.Routes(r)
 		domainSvc.AdminRoutes(r)
 		rulesSvc.Routes(r)
+		serviceSvc.AdminRoutes(r)
+		sl.catalog.Routes(r)
+		sl.metrics.AdminRoutes(r)
+		deployAdmin.Routes(r)
+		flagHook.AdminRoutes(r)
 	})
 	r.Method(http.MethodPost, "/hooks/v1/git", webhooks.NewReceiver(c.provider, cfg.WebhookSecret, producer))
+	r.Method(http.MethodPost, "/hooks/v1/ci-results", &ciresults.Handler{Pool: c.pool, Secrets: cfg.CIResultsSecret, Events: c.events})
+	r.Method(http.MethodPost, "/hooks/v1/deploy", &deploy.Hook{Pool: c.pool, Secrets: c.secrets, Events: c.events})
+	r.Method(http.MethodPost, "/hooks/v1/feature-flags", flagHook)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, apperr.NotFound("not_found", "not found"))
 	})
 
+	internalRouter := chi.NewRouter()
+	internalRouter.Handle("/mcp", mcpServer)
+	internal.Routes(internalRouter)
+
 	api := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(r, "http"), ReadHeaderTimeout: 15 * time.Second}
-	mcpHTTP := &http.Server{Addr: cfg.MCPAddr, Handler: http.StripPrefix("", mcpMux(mcpServer)), ReadHeaderTimeout: 15 * time.Second}
+	internalHTTP := &http.Server{Addr: cfg.InternalAddr, Handler: otelhttp.NewHandler(internalRouter, "internal"), ReadHeaderTimeout: 15 * time.Second}
 	svc := serviceServer(cfg.ServiceAddr, c.ready) // agent health is a metric, not readiness
 
 	g, gctx := errgroup.WithContext(ctx)
-	serve(gctx, g, api, mcpHTTP, svc)
+	serve(gctx, g, api, internalHTTP, svc)
 	return g.Wait()
-}
-
-func mcpMux(s *mcp.Server) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", s)
-	return mux
 }
 
 func requireAnyAdmin(next http.Handler) http.Handler {
@@ -258,7 +342,20 @@ func requireAnyAdmin(next http.Handler) http.Handler {
 	})
 }
 
-// RunWorker consumes push events and import jobs.
+// NewExecutor builds the runner executor.
+func NewExecutor(cfg *config.Config) (executor.Executor, error) {
+	if cfg.RunnerExecutor == "local" {
+		env := []string{"ACP_AGENT_COMMAND=" + cfg.ACPCommand, "ACP_AGENT_ARGS=" + strings.Join(cfg.ACPArgs, " ")}
+		env = append(env, cfg.ACPEnv...)
+		return executor.NewLocal(cfg.RunnerWorkdir, cfg.RunnerTimeout+5*time.Minute, env), nil
+	}
+	return executor.NewK8s(executor.K8sConfig{Namespace: cfg.RunnerNamespace, Image: cfg.RunnerImage, Timeout: cfg.RunnerTimeout,
+		CPU: cfg.RunnerCPU, Memory: cfg.RunnerMemory, EnvFromSecret: cfg.RunnerAgentSecret,
+		Env: []string{"ACP_AGENT_COMMAND=" + cfg.ACPCommand, "ACP_AGENT_ARGS=" + strings.Join(cfg.ACPArgs, " ")}})
+}
+
+// RunWorker consumes webhook events and import jobs, runs the workflow engine
+// (state machines and the outbox), starts runner tasks and syncs the catalog.
 func RunWorker(ctx context.Context, cfg *config.Config) error {
 	c, err := newCore(ctx, cfg)
 	if err != nil {
@@ -271,20 +368,74 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	producer := kafka.NewProducer(cfg.KafkaBrokers)
 	defer producer.Close()
 	tokens := c.authSvc
+	loadPrincipal := principalLoader(c.authRepo)
+	sl := c.slices()
 	rulesSvc := rules.NewService(c.pool, c.provider, tokens, cfg.GitDefaultBranch)
-	importSvc := imports.NewService(c.pool, c.store, c.s3, producer, c.provider, tokens, c.events, rulesSvc, principalLoader(c.authRepo), imports.Config{
+	importSvc := imports.NewService(c.pool, c.store, c.s3, producer, c.provider, tokens, c.events, rulesSvc, loadPrincipal, imports.Config{
 		MaxBytes: cfg.ImportMaxBytes, DefaultBranch: cfg.GitDefaultBranch, AllowedAssets: cfg.ImportAllowedAssetTypes,
 		Limits: imports.Limits{MaxUncompressed: cfg.ImportMaxUncompressedBytes, MaxFiles: cfg.ImportMaxFiles},
 	})
-	proc := webhooks.NewProcessor(c.store, c.provider, c.events)
+	proc := webhooks.NewProcessor(c.store, c.provider, c.events, sl.catalog, sl.codegen, cfg.BotLogin)
 
+	// Agent sessions of the worker (Discovery, generation, checks) with their own MCP endpoint.
+	mcpServer := mcp.NewServer()
+	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
+	agentPool := acp.NewPool(acp.Config{Command: cfg.ACPCommand, Args: cfg.ACPArgs, Env: cfg.ACPEnv, MaxProcs: cfg.ACPMaxProcs, IdleTimeout: cfg.ACPIdleTimeout})
+	defer agentPool.Close()
+	agents := &agentrun.Runner{Agent: agentPool, MCP: mcpServer, URL: "http://" + cfg.WorkerMCPAddr + "/mcp"}
+
+	exec, err := NewExecutor(cfg)
+	if err != nil {
+		return err
+	}
+	engine := workflows.New(c.pool, c.events, workflows.Config{MaxAttempts: cfg.WorkflowMaxAttempts, Lease: cfg.WorkflowLease})
+	engine.Register(discovery.Machine{}, gategen.Machine{}, codegen.Machine{StartValidation: validation.Start},
+		codegen.TaskMachine{Limits: codegen.Limits{MaxParallel: cfg.RunnerMaxParallel, Timeout: cfg.RunnerTimeout}},
+		validation.Machine{}, releases.Machine{}, rollback.Machine{})
+	disc := &discovery.Effects{Q: c.pool, Runner: agents, Timeout: cfg.DiscoveryTimeout}
+	engine.Handle(discovery.Effect, workflows.EffectHandler{Lease: cfg.DiscoveryTimeout + time.Minute, Do: disc.Do})
+	gen := &gategen.Effects{Store: c.store, Git: c.provider, Tokens: tokens, Runner: agents, DefaultBranch: cfg.GitDefaultBranch, Timeout: 30 * time.Minute}
+	engine.Handle(gategen.Effect, workflows.EffectHandler{Lease: 31 * time.Minute, Do: gen.Do})
+	check := &validation.Effects{Store: c.store, Git: c.provider, Runner: agents}
+	engine.Handle(validation.EffectCheck, workflows.EffectHandler{Lease: 30 * time.Minute, Do: check.Check})
+	run := &codegen.RunnerEffects{Q: c.pool, Executor: exec, InternalURL: cfg.InternalURL}
+	engine.Handle(codegen.EffectStart, workflows.EffectHandler{Lease: 5 * time.Minute, Do: run.Start})
+	engine.Handle(codegen.EffectStop, workflows.EffectHandler{Do: run.Stop})
+	dep := &deploy.Effects{Q: c.pool, Trigger: cicd.New(c.provider), Secrets: c.secrets, PublicURL: cfg.HooksURL}
+	engine.Handle(deploy.Effect, workflows.EffectHandler{Do: dep.Do})
+	rel := &releases.Effects{Q: c.pool, Store: c.store, Git: c.provider, Tokens: tokens}
+	engine.Handle(releases.EffectMerge, workflows.EffectHandler{Do: rel.Merge})
+	engine.Handle(releases.EffectMergeSpec, workflows.EffectHandler{Do: rel.MergeSpec})
+	engine.Handle(releases.EffectCheckTag, workflows.EffectHandler{Do: rel.CheckTag})
+	engine.Handle(releases.EffectClosePRs, workflows.EffectHandler{Do: rel.ClosePRs})
+
+	mcpHTTP := &http.Server{Addr: cfg.WorkerMCPAddr, Handler: mcpServer, ReadHeaderTimeout: 15 * time.Second}
 	g, gctx := errgroup.WithContext(ctx)
-	serve(gctx, g, serviceServer(cfg.ServiceAddr, c.ready))
+	serve(gctx, g, serviceServer(cfg.ServiceAddr, c.ready), mcpHTTP)
 	g.Go(func() error {
 		return kafka.Consume(gctx, cfg.KafkaBrokers, "hammurapi-worker", kafka.TopicGitPush, proc.Handle)
 	})
 	g.Go(func() error {
 		return kafka.Consume(gctx, cfg.KafkaBrokers, "hammurapi-worker", kafka.TopicImports, importSvc.Handle)
+	})
+	g.Go(func() error { return engine.Run(gctx) })
+	g.Go(func() error {
+		// Full catalog synchronization once a day (arch §10); pushes trigger it in between.
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				if _, err := sl.catalog.Sync(gctx); err != nil {
+					var ae *apperr.Error
+					if !errors.As(err, &ae) {
+						slog.Warn("daily catalog sync failed", "err", err)
+					}
+				}
+			}
+		}
 	})
 	return g.Wait()
 }

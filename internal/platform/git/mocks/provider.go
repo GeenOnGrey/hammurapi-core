@@ -71,6 +71,21 @@ func (mr *MockProviderMockRecorder) AuthCodeURL(state, redirectURL any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthCodeURL", reflect.TypeOf((*MockProvider)(nil).AuthCodeURL), state, redirectURL)
 }
 
+// BotToken mocks base method.
+func (m *MockProvider) BotToken(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BotToken", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BotToken indicates an expected call of BotToken.
+func (mr *MockProviderMockRecorder) BotToken(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BotToken", reflect.TypeOf((*MockProvider)(nil).BotToken), ctx)
+}
+
 // BranchHead mocks base method.
 func (m *MockProvider) BranchHead(ctx context.Context, token, branch string) (string, error) {
 	m.ctrl.T.Helper()
@@ -100,6 +115,20 @@ func (mr *MockProviderMockRecorder) ClosePR(ctx, token, number any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClosePR", reflect.TypeOf((*MockProvider)(nil).ClosePR), ctx, token, number)
 }
 
+// CommentPR mocks base method.
+func (m *MockProvider) CommentPR(ctx context.Context, token string, number int, body string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CommentPR", ctx, token, number, body)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CommentPR indicates an expected call of CommentPR.
+func (mr *MockProviderMockRecorder) CommentPR(ctx, token, number, body any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommentPR", reflect.TypeOf((*MockProvider)(nil).CommentPR), ctx, token, number, body)
+}
+
 // Commit mocks base method.
 func (m *MockProvider) Commit(ctx context.Context, token, branch, message string, changes []git.FileChange) (string, error) {
 	m.ctrl.T.Helper()
@@ -113,6 +142,21 @@ func (m *MockProvider) Commit(ctx context.Context, token, branch, message string
 func (mr *MockProviderMockRecorder) Commit(ctx, token, branch, message, changes any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockProvider)(nil).Commit), ctx, token, branch, message, changes)
+}
+
+// CommitParents mocks base method.
+func (m *MockProvider) CommitParents(ctx context.Context, token, sha string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CommitParents", ctx, token, sha)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CommitParents indicates an expected call of CommitParents.
+func (mr *MockProviderMockRecorder) CommitParents(ctx, token, sha any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitParents", reflect.TypeOf((*MockProvider)(nil).CommitParents), ctx, token, sha)
 }
 
 // CommitURL mocks base method.
@@ -188,6 +232,21 @@ func (mr *MockProviderMockRecorder) CurrentUser(ctx, token any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CurrentUser", reflect.TypeOf((*MockProvider)(nil).CurrentUser), ctx, token)
 }
 
+// DefaultBranch mocks base method.
+func (m *MockProvider) DefaultBranch(ctx context.Context, token string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DefaultBranch", ctx, token)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DefaultBranch indicates an expected call of DefaultBranch.
+func (mr *MockProviderMockRecorder) DefaultBranch(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DefaultBranch", reflect.TypeOf((*MockProvider)(nil).DefaultBranch), ctx, token)
+}
+
 // DeleteBranch mocks base method.
 func (m *MockProvider) DeleteBranch(ctx context.Context, token, branch string) error {
 	m.ctrl.T.Helper()
@@ -217,6 +276,20 @@ func (mr *MockProviderMockRecorder) Exchange(ctx, code, redirectURL any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exchange", reflect.TypeOf((*MockProvider)(nil).Exchange), ctx, code, redirectURL)
 }
 
+// ForRepo mocks base method.
+func (m *MockProvider) ForRepo(repo string) git.Provider {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ForRepo", repo)
+	ret0, _ := ret[0].(git.Provider)
+	return ret0
+}
+
+// ForRepo indicates an expected call of ForRepo.
+func (mr *MockProviderMockRecorder) ForRepo(repo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ForRepo", reflect.TypeOf((*MockProvider)(nil).ForRepo), repo)
+}
+
 // GetFile mocks base method.
 func (m *MockProvider) GetFile(ctx context.Context, token, ref, path string) (*git.File, error) {
 	m.ctrl.T.Helper()
@@ -230,6 +303,51 @@ func (m *MockProvider) GetFile(ctx context.Context, token, ref, path string) (*g
 func (mr *MockProviderMockRecorder) GetFile(ctx, token, ref, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFile", reflect.TypeOf((*MockProvider)(nil).GetFile), ctx, token, ref, path)
+}
+
+// GetPR mocks base method.
+func (m *MockProvider) GetPR(ctx context.Context, token string, number int) (*git.PRInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPR", ctx, token, number)
+	ret0, _ := ret[0].(*git.PRInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPR indicates an expected call of GetPR.
+func (mr *MockProviderMockRecorder) GetPR(ctx, token, number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPR", reflect.TypeOf((*MockProvider)(nil).GetPR), ctx, token, number)
+}
+
+// GroupMembers mocks base method.
+func (m *MockProvider) GroupMembers(ctx context.Context, token, group string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GroupMembers", ctx, token, group)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GroupMembers indicates an expected call of GroupMembers.
+func (mr *MockProviderMockRecorder) GroupMembers(ctx, token, group any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GroupMembers", reflect.TypeOf((*MockProvider)(nil).GroupMembers), ctx, token, group)
+}
+
+// IsAncestor mocks base method.
+func (m *MockProvider) IsAncestor(ctx context.Context, token, ancestor, descendant string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsAncestor", ctx, token, ancestor, descendant)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsAncestor indicates an expected call of IsAncestor.
+func (mr *MockProviderMockRecorder) IsAncestor(ctx, token, ancestor, descendant any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAncestor", reflect.TypeOf((*MockProvider)(nil).IsAncestor), ctx, token, ancestor, descendant)
 }
 
 // LatestCommit mocks base method.
@@ -290,6 +408,36 @@ func (mr *MockProviderMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockProvider)(nil).Name))
 }
 
+// PRChangedFiles mocks base method.
+func (m *MockProvider) PRChangedFiles(ctx context.Context, token string, number int) ([]git.ChangedFile, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PRChangedFiles", ctx, token, number)
+	ret0, _ := ret[0].([]git.ChangedFile)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PRChangedFiles indicates an expected call of PRChangedFiles.
+func (mr *MockProviderMockRecorder) PRChangedFiles(ctx, token, number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PRChangedFiles", reflect.TypeOf((*MockProvider)(nil).PRChangedFiles), ctx, token, number)
+}
+
+// ParseHook mocks base method.
+func (m *MockProvider) ParseHook(h http.Header, body []byte) (*git.HookEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ParseHook", h, body)
+	ret0, _ := ret[0].(*git.HookEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ParseHook indicates an expected call of ParseHook.
+func (mr *MockProviderMockRecorder) ParseHook(h, body any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ParseHook", reflect.TypeOf((*MockProvider)(nil).ParseHook), h, body)
+}
+
 // ParsePush mocks base method.
 func (m *MockProvider) ParsePush(h http.Header, body []byte) (*git.PushEvent, bool, error) {
 	m.ctrl.T.Helper()
@@ -321,6 +469,49 @@ func (mr *MockProviderMockRecorder) Refresh(ctx, refreshToken any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Refresh", reflect.TypeOf((*MockProvider)(nil).Refresh), ctx, refreshToken)
 }
 
+// Repo mocks base method.
+func (m *MockProvider) Repo() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Repo")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// Repo indicates an expected call of Repo.
+func (mr *MockProviderMockRecorder) Repo() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Repo", reflect.TypeOf((*MockProvider)(nil).Repo))
+}
+
+// RequestReview mocks base method.
+func (m *MockProvider) RequestReview(ctx context.Context, token string, number int, reviewers []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestReview", ctx, token, number, reviewers)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RequestReview indicates an expected call of RequestReview.
+func (mr *MockProviderMockRecorder) RequestReview(ctx, token, number, reviewers any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestReview", reflect.TypeOf((*MockProvider)(nil).RequestReview), ctx, token, number, reviewers)
+}
+
+// RunPipeline mocks base method.
+func (m *MockProvider) RunPipeline(ctx context.Context, token, workflow, ref string, params map[string]string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RunPipeline", ctx, token, workflow, ref, params)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RunPipeline indicates an expected call of RunPipeline.
+func (mr *MockProviderMockRecorder) RunPipeline(ctx, token, workflow, ref, params any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPipeline", reflect.TypeOf((*MockProvider)(nil).RunPipeline), ctx, token, workflow, ref, params)
+}
+
 // SearchCode mocks base method.
 func (m *MockProvider) SearchCode(ctx context.Context, token, query string) ([]git.SearchHit, error) {
 	m.ctrl.T.Helper()
@@ -334,6 +525,20 @@ func (m *MockProvider) SearchCode(ctx context.Context, token, query string) ([]g
 func (mr *MockProviderMockRecorder) SearchCode(ctx, token, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchCode", reflect.TypeOf((*MockProvider)(nil).SearchCode), ctx, token, query)
+}
+
+// UpdatePRBranch mocks base method.
+func (m *MockProvider) UpdatePRBranch(ctx context.Context, token string, number int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePRBranch", ctx, token, number)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdatePRBranch indicates an expected call of UpdatePRBranch.
+func (mr *MockProviderMockRecorder) UpdatePRBranch(ctx, token, number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePRBranch", reflect.TypeOf((*MockProvider)(nil).UpdatePRBranch), ctx, token, number)
 }
 
 // VerifyWebhook mocks base method.

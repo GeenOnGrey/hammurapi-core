@@ -133,8 +133,8 @@ func NewService(pool *pgxpool.Pool, store specdata.Store, s3 storage.Storage, bu
 
 // Upload stores and validates an archive, creating a job with a preview.
 func (s *Service) Upload(ctx context.Context, p *domain.Principal, fileName string, data []byte) (*Job, error) {
-	if !p.HasRole(domain.RoleEditor) {
-		return nil, apperr.NoRole("editor", "")
+	if !p.IsAnyExpert() {
+		return nil, apperr.Forbidden("forbidden", "domain expert role required")
 	}
 	if int64(len(data)) > s.cfg.MaxBytes {
 		return nil, apperr.TooLarge("archive_too_large", "the archive is too large").With("maxBytes", s.cfg.MaxBytes)
@@ -238,11 +238,9 @@ func (s *Service) validate(ctx context.Context, p *domain.Principal, arc *Archiv
 		if mentions > 0 {
 			fp.Warnings = append(fp.Warnings, Issue{Code: "old_id_mentioned", Params: map[string]any{"count": mentions}})
 		}
-		// Roles: editor in every area of the feature.
-		for _, a := range areas {
-			if !p.Has(domain.RoleEditor, a) {
-				fp.Errors = append(fp.Errors, Issue{Code: "missing_editor_role", Params: map[string]any{"area": a}})
-			}
+		// Roles: experts import into their own domains.
+		if !p.IsExpertOf(f.Domain) {
+			fp.Errors = append(fp.Errors, Issue{Code: "not_domain_expert", Params: map[string]any{"domain": f.Domain}})
 		}
 		// Dictionary.
 		sys, err := s.store.SystemByKeys(ctx, f.Domain, f.System)
@@ -268,7 +266,7 @@ func (s *Service) validate(ctx context.Context, p *domain.Principal, arc *Archiv
 		if parent != "" {
 			fp.Parent = &parent
 			pf, err := s.store.FeatureByUniqueID(ctx, parent)
-			if errors.Is(err, specdata.ErrNotFound) || (err == nil && pf.Status != domain.FeatureHandedOff) {
+			if errors.Is(err, specdata.ErrNotFound) || (err == nil && pf.Phase == domain.PhaseDeleted) {
 				fp.Errors = append(fp.Errors, Issue{Code: "parent_invalid", Params: map[string]any{"parent": parent}})
 			} else if err != nil {
 				return nil, err
@@ -276,7 +274,7 @@ func (s *Service) validate(ctx context.Context, p *domain.Principal, arc *Archiv
 		}
 		if len(fp.Errors) == 0 && sys != nil {
 			next[sys.ID]++
-			id := domain.FormatUniqueID(sys.DomainKey, sys.Key, next[sys.ID])
+			id := domain.FeatureKey(sys.DomainKey, sys.Key, next[sys.ID])
 			fp.NewID = &id
 		}
 		pv.Features = append(pv.Features, fp)
@@ -316,7 +314,7 @@ func (s *Service) assetAllowed(data []byte) bool {
 }
 
 func (s *Service) adminNames(ctx context.Context) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT u.display_name FROM users u LEFT JOIN user_roles r ON r.user_id = u.id AND r.role = 'admin'
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT u.display_name FROM users u LEFT JOIN area_admins r ON r.user_id = u.id
 		WHERE u.is_global_admin OR r.user_id IS NOT NULL ORDER BY 1 LIMIT 20`)
 	if err != nil {
 		return nil, err
@@ -619,8 +617,8 @@ func (s *Service) importFeature(ctx context.Context, p *domain.Principal, token 
 	var parent *specdata.Feature
 	if fp.Parent != nil {
 		pf, err := s.store.FeatureByUniqueID(ctx, *fp.Parent)
-		if err != nil || pf.Status != domain.FeatureHandedOff {
-			return fmt.Errorf("parent %s is not a handed-off feature", *fp.Parent)
+		if err != nil || pf.Phase == domain.PhaseDeleted {
+			return fmt.Errorf("parent %s is not a live feature", *fp.Parent)
 		}
 		parent = pf
 	}
@@ -630,17 +628,17 @@ func (s *Service) importFeature(ctx context.Context, p *domain.Principal, token 
 		if err != nil {
 			return err
 		}
-		if !p.Has(domain.RoleEditor, area) {
-			return fmt.Errorf("editor role in %s required", area)
-		}
 		areas = append(areas, area)
+	}
+	if !p.IsExpertOf(sys.DomainKey) {
+		return fmt.Errorf("expert of domain %s required", sys.DomainKey)
 	}
 	return s.store.InTx(ctx, func(tx specdata.Store) error {
 		n, err := tx.NextNumber(ctx, sys.ID)
 		if err != nil {
 			return err
 		}
-		uid := domain.FormatUniqueID(sys.DomainKey, sys.Key, n)
+		uid := domain.FeatureKey(sys.DomainKey, sys.Key, n)
 		branch := git.FeatureBranch(uid)
 		base, err := s.git.BranchHead(ctx, token, s.cfg.DefaultBranch)
 		if err != nil {
@@ -675,7 +673,9 @@ func (s *Service) importFeature(ctx context.Context, p *domain.Principal, token 
 		if err != nil {
 			return cleanup(auth.MapGitError(err))
 		}
-		f := &specdata.Feature{UniqueID: uid, SystemID: sys.ID, Number: n, Title: fp.Title, Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, CreatedBy: p.UserID}
+		// Imported features have no Discovery and no issues (R9).
+		f := &specdata.Feature{UniqueID: uid, SystemID: sys.ID, Number: n, Title: fp.Title, Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
+			Phase: domain.PhaseSpec, Imported: true, CreatedBy: p.UserID}
 		if parent != nil {
 			f.ParentID = &parent.ID
 		}
@@ -684,7 +684,7 @@ func (s *Service) importFeature(ctx context.Context, p *domain.Principal, token 
 		}
 		now := time.Now()
 		for _, area := range areas {
-			g := &specdata.Gate{FeatureID: f.ID, Area: area, Status: domain.GateDraft, HeadCommit: sha, CreatedBy: p.UserID}
+			g := &specdata.Gate{FeatureID: f.ID, Area: area, Status: domain.GateDraft, Generated: area.Generated(), HeadCommit: sha, CreatedBy: p.UserID}
 			if sys.ApprovalRequired {
 				g.Status, g.SubmittedAt = domain.GateInReview, &now
 			}

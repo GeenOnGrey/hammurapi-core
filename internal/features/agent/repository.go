@@ -18,12 +18,18 @@ type Message struct {
 	ID          uuid.UUID       `json:"id"`
 	Role        string          `json:"role"` // user | agent
 	Mode        string          `json:"mode"` // general | spec
-	Feature     *string         `json:"feature"`
-	Area        *domain.Area    `json:"area"`
+	Context     *MessageContext `json:"context"`
 	Content     string          `json:"content"`
 	IsVoice     bool            `json:"isVoice"`
 	Attachments []AttachmentRef `json:"attachments"`
 	CreatedAt   time.Time       `json:"createdAt"`
+}
+
+// MessageContext is the context a message was written in.
+type MessageContext struct {
+	Type string       `json:"type"`
+	Key  string       `json:"key"`
+	Area *domain.Area `json:"area"`
 }
 
 // AttachmentRef is an attachment shown with a message.
@@ -40,11 +46,16 @@ type Repository struct{ pool *pgxpool.Pool }
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 // Insert stores a message.
-func (r *Repository) Insert(ctx context.Context, q postgres.Querier, userID uuid.UUID, role, mode string, featureID *uuid.UUID, area *domain.Area, content string, isVoice bool) (uuid.UUID, time.Time, error) {
+func (r *Repository) Insert(ctx context.Context, q postgres.Querier, userID uuid.UUID, role, mode string, rc *resolved, content string, isVoice bool) (uuid.UUID, time.Time, error) {
 	var id uuid.UUID
 	var at time.Time
-	err := q.QueryRow(ctx, `INSERT INTO chat_messages (user_id, role, mode, feature_id, area, content, is_voice)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`, userID, role, mode, featureID, area, content, isVoice).Scan(&id, &at)
+	var ctype, ckey *string
+	var area *domain.Area
+	if rc != nil {
+		ctype, ckey, area = &rc.Type, &rc.Key, rc.Area
+	}
+	err := q.QueryRow(ctx, `INSERT INTO chat_messages (user_id, role, mode, context_type, context_key, area, content, is_voice)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, created_at`, userID, role, mode, ctype, ckey, area, content, isVoice).Scan(&id, &at)
 	return id, at, err
 }
 
@@ -56,8 +67,8 @@ func (r *Repository) History(ctx context.Context, userID uuid.UUID, page httpx.P
 		args = append(args, c.T, c.ID)
 		cond = ` AND (m.created_at, m.id::text) < ($3, $4)`
 	}
-	rows, err := r.pool.Query(ctx, `SELECT m.id, m.role, m.mode, f.unique_id, m.area, m.content, m.is_voice, m.created_at
-		FROM chat_messages m LEFT JOIN features f ON f.id = m.feature_id
+	rows, err := r.pool.Query(ctx, `SELECT m.id, m.role, m.mode, m.context_type, m.context_key, m.area, m.content, m.is_voice, m.created_at
+		FROM chat_messages m
 		WHERE m.user_id = $1`+cond+` ORDER BY m.created_at DESC, m.id::text DESC LIMIT $2`, args...)
 	if err != nil {
 		return nil, err
@@ -66,9 +77,14 @@ func (r *Repository) History(ctx context.Context, userID uuid.UUID, page httpx.P
 	ids := []uuid.UUID{}
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.Role, &m.Mode, &m.Feature, &m.Area, &m.Content, &m.IsVoice, &m.CreatedAt); err != nil {
+		var ctype, ckey *string
+		var area *domain.Area
+		if err := rows.Scan(&m.ID, &m.Role, &m.Mode, &ctype, &ckey, &area, &m.Content, &m.IsVoice, &m.CreatedAt); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if ctype != nil && ckey != nil {
+			m.Context = &MessageContext{Type: *ctype, Key: *ckey, Area: area}
 		}
 		m.Attachments = []AttachmentRef{}
 		out = append(out, m)

@@ -19,11 +19,12 @@ import (
 
 // GitLab implements Provider for gitlab.com and self-hosted GitLab via OAuth tokens.
 type GitLab struct {
-	api     *apiClient
-	baseURL string
-	repo    string
-	project string // url-encoded project path
-	oauth   oauth2.Config
+	api      *apiClient
+	baseURL  string
+	repo     string
+	project  string // url-encoded project path
+	oauth    oauth2.Config
+	botToken string
 }
 
 // NewGitLab builds a GitLab provider.

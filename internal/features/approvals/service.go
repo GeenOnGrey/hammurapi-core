@@ -15,6 +15,7 @@ import (
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/markdown"
 	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
 )
 
@@ -42,11 +43,12 @@ type Service struct {
 	git    git.Provider
 	tokens git.TokenSource
 	events events.Publisher
+	gen    gates.Generator
 }
 
 // NewService creates the service.
-func NewService(store specdata.Store, list Lister, provider git.Provider, tokens git.TokenSource, ev events.Publisher) *Service {
-	return &Service{store: store, list: list, git: provider, tokens: tokens, events: ev}
+func NewService(store specdata.Store, list Lister, provider git.Provider, tokens git.TokenSource, ev events.Publisher, gen gates.Generator) *Service {
+	return &Service{store: store, list: list, git: provider, tokens: tokens, events: ev, gen: gen}
 }
 
 var (
@@ -66,23 +68,41 @@ func (s *Service) load(ctx context.Context, uniqueID string, area domain.Area) (
 	return f, g, err
 }
 
-// Submit moves a draft gate to in_review.
-func (s *Service) Submit(ctx context.Context, p *domain.Principal, uniqueID string, area domain.Area) (*specdata.Gate, error) {
-	if !p.Has(domain.RoleEditor, area) {
-		return nil, apperr.NoRole("editor", string(area))
-	}
+// Submit moves a draft gate to in_review. Any expert of the domain submits,
+// including the generated tech and qa. Product requirements without an ID
+// return 409 requirements_without_id with their list unless force is set (R15).
+func (s *Service) Submit(ctx context.Context, p *domain.Principal, uniqueID string, area domain.Area, force bool) (*specdata.Gate, error) {
 	f, g, err := s.load(ctx, uniqueID, area)
 	if err != nil {
 		return nil, err
 	}
-	if f.Status != domain.FeatureInProgress {
-		return nil, gates.ErrReadOnly
+	if err := features.RequireExpert(p, f.DomainKey); err != nil {
+		return nil, err
+	}
+	if err := features.RequireSpecPhase(f); err != nil {
+		return nil, err
 	}
 	if !f.ApprovalRequired {
 		return nil, errApprovalDisabled
 	}
 	if g.Status != domain.GateDraft {
 		return nil, apperr.Conflict("not_draft", "only a draft can be submitted for approval")
+	}
+	if area == domain.AreaProduct && !force {
+		token, err := s.tokens.Token(ctx, p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		doc, err := s.git.GetFile(ctx, token, f.Branch, git.SpecPath(f.DomainKey, f.SystemKey, f.UniqueID, string(area)))
+		if err != nil && !errors.Is(err, git.ErrNotFound) {
+			return nil, auth.MapGitError(err)
+		}
+		if doc != nil {
+			if u := markdown.UnnumberedRequirements(string(doc.Content)); len(u) > 0 {
+				return nil, apperr.Conflict("requirements_without_id", "some requirements have no ID; ask the agent to number them or submit anyway").
+					With("requirements", u)
+			}
+		}
 	}
 	now := time.Now()
 	g.Status, g.SubmittedAt = domain.GateInReview, &now
@@ -101,19 +121,22 @@ func (s *Service) Submit(ctx context.Context, p *domain.Principal, uniqueID stri
 	return g, nil
 }
 
-// Approve approves an in_review gate. Approval is strictly sequential in area
-// order, and it is rejected when git has a newer commit of the document than
-// the projection knows (a push whose webhook is not processed yet).
+// Approve approves an in_review gate: product and design by a product expert,
+// arch, tech and qa by a technical expert of the feature's domain. Approval is
+// strictly sequential in area order, and it is rejected when git has a newer
+// commit of the document than the projection knows. When every human gate is
+// approved, the agent (re)generates tech and qa (R12, R13).
 func (s *Service) Approve(ctx context.Context, p *domain.Principal, uniqueID string, area domain.Area) (*specdata.Gate, error) {
-	if !p.Has(domain.RoleApprover, area) {
-		return nil, apperr.NoRole("approver", string(area))
-	}
 	f, g, err := s.load(ctx, uniqueID, area)
 	if err != nil {
 		return nil, err
 	}
-	if f.Status != domain.FeatureInProgress {
-		return nil, gates.ErrReadOnly
+	if !p.CanApprove(f.DomainKey, area) {
+		return nil, apperr.Forbidden("forbidden", string(area.ApproverKind())+" expert of domain "+f.DomainKey+" required").
+			With("kind", area.ApproverKind()).With("domain", f.DomainKey)
+	}
+	if err := features.RequireSpecPhase(f); err != nil {
+		return nil, err
 	}
 	if !f.ApprovalRequired {
 		return nil, errApprovalDisabled
@@ -155,12 +178,25 @@ func (s *Service) Approve(ctx context.Context, p *domain.Principal, uniqueID str
 	gates.RecordTransition(area, string(domain.GateApproved))
 	gates.PublishGateUpdated(ctx, s.events, f.UniqueID, g)
 	s.events.Publish(ctx, events.Event{Type: events.ApprovalsChanged, Data: map[string]string{"uniqueId": f.UniqueID}})
+	s.events.Publish(ctx, events.Event{Type: events.FocusChanged, Data: map[string]string{"uniqueId": f.UniqueID}})
+	if !area.Generated() && s.gen != nil {
+		for i := range all {
+			if all[i].Area == area {
+				all[i].Status = domain.GateApproved
+			}
+		}
+		if features.HumanGatesApproved(all) {
+			if err := s.gen.Generate(ctx, f, []domain.Area{domain.AreaTech, domain.AreaQA}, p.UserID, ""); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return g, nil
 }
 
-// List returns the approvals queue; empty for users without approver roles.
+// List returns the approvals queue; empty for users who are not experts.
 func (s *Service) List(ctx context.Context, p *domain.Principal, page httpx.Page) (httpx.List[Pending], error) {
-	if !p.HasRole(domain.RoleApprover) {
+	if !p.IsAnyExpert() {
 		return httpx.List[Pending]{Items: []Pending{}}, nil
 	}
 	items, err := s.list.Pending(ctx, p.UserID.String(), page)

@@ -48,7 +48,15 @@ func (h *Handlers) submit(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	g, err := h.svc.Submit(r.Context(), p, chi.URLParam(r, "uniqueId"), a)
+	var in struct {
+		Force bool `json:"force"`
+	}
+	if r.ContentLength > 0 {
+		if err := httpx.Decode(r, &in); err != nil {
+			return err
+		}
+	}
+	g, err := h.svc.Submit(r.Context(), p, chi.URLParam(r, "uniqueId"), a, in.Force)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,32 +99,50 @@ func (h *Handlers) setSessionCookies(w http.ResponseWriter, sid uuid.UUID, csrf 
 
 // Me is the response of /auth/me.
 type Me struct {
-	ID          uuid.UUID   `json:"id"`
-	Username    string      `json:"username"`
-	DisplayName string      `json:"displayName"`
-	AvatarURL   *string     `json:"avatarUrl"`
-	GlobalAdmin bool        `json:"globalAdmin"`
-	Roles       []RoleAreas `json:"roles"`
-	Language    string      `json:"language"`
-	Theme       string      `json:"theme"`
-	AgentName   string      `json:"agentName"`
-	AgentTone   string      `json:"agentTone"`
+	ID          uuid.UUID       `json:"id"`
+	Username    string          `json:"username"`
+	DisplayName string          `json:"displayName"`
+	AvatarURL   *string         `json:"avatarUrl"`
+	GlobalAdmin bool            `json:"globalAdmin"`
+	AreaAdmin   []domain.Area   `json:"areaAdmin"`
+	Experts     []ExpertDomains `json:"experts"`
+	Services    []string        `json:"ownedServices"`
+	Language    string          `json:"language"`
+	Theme       string          `json:"theme"`
+	AgentName   string          `json:"agentName"`
+	AgentTone   string          `json:"agentTone"`
 }
 
-// RoleAreas is a role with its areas.
-type RoleAreas struct {
-	Role  domain.Role   `json:"role"`
-	Areas []domain.Area `json:"areas"`
+// ExpertDomains lists the expert kinds of a user in one domain.
+type ExpertDomains struct {
+	Domain string              `json:"domain"`
+	Kinds  []domain.ExpertKind `json:"kinds"`
 }
 
-// RolesOf lists roles of a principal in a stable order.
-func RolesOf(p *domain.Principal) []RoleAreas {
-	out := []RoleAreas{}
-	for _, role := range domain.Roles {
-		if areas := p.AreasFor(role); len(areas) > 0 {
-			out = append(out, RoleAreas{Role: role, Areas: areas})
+// ExpertsOf lists expert roles of a principal in a stable order.
+func ExpertsOf(p *domain.Principal) []ExpertDomains {
+	out := []ExpertDomains{}
+	for _, d := range p.ExpertDomains() {
+		e := ExpertDomains{Domain: d, Kinds: []domain.ExpertKind{}}
+		for _, k := range []domain.ExpertKind{domain.ExpertProduct, domain.ExpertTechnical} {
+			if p.HasExpert(d, k) {
+				e.Kinds = append(e.Kinds, k)
+			}
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// OwnedServices lists owned service keys, sorted.
+func OwnedServices(p *domain.Principal) []string {
+	out := []string{}
+	for k, ok := range p.OwnedServices {
+		if ok {
+			out = append(out, k)
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -140,7 +159,8 @@ func (h *Handlers) me(w http.ResponseWriter, r *http.Request) error {
 		return apperr.ErrNoSession
 	}
 	httpx.JSON(w, 200, Me{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL,
-		GlobalAdmin: p.GlobalAdmin, Roles: RolesOf(p), Language: u.Language, Theme: u.Theme,
+		GlobalAdmin: p.GlobalAdmin, AreaAdmin: nonNil(p.AdminAreas()), Experts: ExpertsOf(p), Services: OwnedServices(p),
+		Language: u.Language, Theme: u.Theme,
 		AgentName: u.AgentName, AgentTone: string(u.AgentTone)})
 	return nil
 }
@@ -229,4 +249,11 @@ func validCSRF(r *http.Request, sessionToken string) bool {
 	}
 	return subtle.ConstantTimeCompare([]byte(hdr), []byte(c.Value)) == 1 &&
 		subtle.ConstantTimeCompare([]byte(hdr), []byte(sessionToken)) == 1
+}
+
+func nonNil(a []domain.Area) []domain.Area {
+	if a == nil {
+		return []domain.Area{}
+	}
+	return a
 }

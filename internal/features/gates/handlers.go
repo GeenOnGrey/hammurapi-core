@@ -26,6 +26,7 @@ func (h *Handlers) Routes(r chi.Router) {
 		r.Put("/document", httpx.Handler(h.putDoc))
 		r.Get("/diff", httpx.Handler(h.diff))
 		r.Get("/history", httpx.Handler(h.history))
+		r.Post("/regenerate", httpx.Handler(h.regenerate))
 	})
 }
 
@@ -143,5 +144,29 @@ func (h *Handlers) history(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	httpx.JSON(w, 200, l)
+	return nil
+}
+
+func (h *Handlers) regenerate(w http.ResponseWriter, r *http.Request) error {
+	p, err := httpx.MustPrincipal(r)
+	if err != nil {
+		return err
+	}
+	a, err := httpx.ParamArea(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Comment string `json:"comment"`
+	}
+	if r.ContentLength > 0 {
+		if err := httpx.Decode(r, &in); err != nil {
+			return err
+		}
+	}
+	if err := h.svc.Regenerate(r.Context(), p, chi.URLParam(r, "uniqueId"), a, in.Comment); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusAccepted)
 	return nil
 }

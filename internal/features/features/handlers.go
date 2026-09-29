@@ -20,9 +20,10 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // Routes mounts the routes.
 func (h *Handlers) Routes(r chi.Router) {
 	r.Get("/features", httpx.Handler(h.list))
-	r.Post("/features", httpx.Handler(h.create))
 	r.Get("/features/{uniqueId}", httpx.Handler(h.get))
+	r.Patch("/features/{uniqueId}", httpx.Handler(h.patch))
 	r.Delete("/features/{uniqueId}", httpx.Handler(h.delete))
+	r.Get("/features/{uniqueId}/requirements", httpx.Handler(h.requirements))
 	r.Post("/features/{uniqueId}/lock", httpx.Handler(h.lock))
 	r.Delete("/features/{uniqueId}/lock", httpx.Handler(h.unlock))
 }
@@ -38,10 +39,18 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	}
 	q := r.URL.Query()
 	status := q.Get("status")
-	if status != "" && status != "in_progress" && status != "handed_off" && status != "all" {
-		return apperr.BadRequest("invalid_status", "status must be in_progress, handed_off or all")
+	switch status {
+	case "", "active", "released", "rolled_back", "all":
+	default:
+		return apperr.BadRequest("invalid_status", "status must be active, released, rolled_back or all")
 	}
-	items, err := h.svc.List(r.Context(), specdata.ListFilter{UserID: p.UserID, Domain: q.Get("domain"), Status: status, Query: q.Get("q"), Page: page})
+	phase := q.Get("phase")
+	switch phase {
+	case "", "spec", "codegen", "validation":
+	default:
+		return apperr.BadRequest("invalid_phase", "phase must be spec, codegen or validation")
+	}
+	items, err := h.svc.List(r.Context(), specdata.ListFilter{UserID: p.UserID, Domain: q.Get("domain"), Phase: phase, Status: status, Query: q.Get("q"), Page: page})
 	if err != nil {
 		return err
 	}
@@ -64,20 +73,30 @@ func idOf(items []specdata.ListedFeature, uid string) string {
 	return ""
 }
 
-func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
+func (h *Handlers) patch(w http.ResponseWriter, r *http.Request) error {
 	p, err := httpx.MustPrincipal(r)
 	if err != nil {
 		return err
 	}
-	var in CreateInput
+	var in struct {
+		FlagKey *string `json:"flagKey"`
+	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	f, err := h.svc.Create(r.Context(), p, in)
+	if err := h.svc.SetFlagKey(r.Context(), p, chi.URLParam(r, "uniqueId"), in.FlagKey); err != nil {
+		return err
+	}
+	httpx.NoContent(w)
+	return nil
+}
+
+func (h *Handlers) requirements(w http.ResponseWriter, r *http.Request) error {
+	rows, err := h.svc.Requirements(r.Context(), chi.URLParam(r, "uniqueId"))
 	if err != nil {
 		return err
 	}
-	httpx.JSON(w, http.StatusCreated, map[string]any{"uniqueId": f.UniqueID, "prUrl": f.PRURL})
+	httpx.JSON(w, 200, rows)
 	return nil
 }
 
@@ -100,12 +119,12 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var in struct {
-		ConfirmUniqueID string `json:"confirmUniqueId"`
+		ConfirmKey string `json:"confirmKey"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	if err := h.svc.Delete(r.Context(), p, chi.URLParam(r, "uniqueId"), in.ConfirmUniqueID); err != nil {
+	if err := h.svc.Delete(r.Context(), p, chi.URLParam(r, "uniqueId"), in.ConfirmKey); err != nil {
 		return err
 	}
 	httpx.NoContent(w)

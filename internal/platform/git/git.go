@@ -92,12 +92,68 @@ type PushCommit struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// PushEvent is a normalized push webhook.
+// PushEvent is a normalized push webhook (branch or tag).
 type PushEvent struct {
 	EventID string       `json:"eventId"`
+	Repo    string       `json:"repo"`
 	Branch  string       `json:"branch"`
+	Tag     string       `json:"tag,omitempty"`
+	After   string       `json:"after,omitempty"`
 	Actor   string       `json:"actor"` // provider username of the pusher
 	Commits []PushCommit `json:"commits"`
+}
+
+// PREvent is a normalized pull/merge request webhook.
+type PREvent struct {
+	EventID  string `json:"eventId"`
+	Repo     string `json:"repo"`
+	Number   int    `json:"number"`
+	Action   string `json:"action"` // opened | updated | merged | closed | reopened
+	Title    string `json:"title"`
+	Branch   string `json:"branch"`
+	Base     string `json:"base"`
+	HeadSHA  string `json:"headSha"`
+	MergeSHA string `json:"mergeSha,omitempty"`
+	URL      string `json:"url"`
+	Author   string `json:"author"`
+	Actor    string `json:"actor"`
+}
+
+// ReviewEvent is a normalized review or review comment on a PR/MR.
+type ReviewEvent struct {
+	EventID string `json:"eventId"`
+	Repo    string `json:"repo"`
+	Number  int    `json:"number"`
+	State   string `json:"state"` // approved | changes_requested | commented
+	Body    string `json:"body"`
+	Author  string `json:"author"`
+}
+
+// HookEvent is any webhook Hammurapi understands.
+type HookEvent struct {
+	Kind   string       `json:"kind"` // push | tag | pr | review
+	Push   *PushEvent   `json:"push,omitempty"`
+	PR     *PREvent     `json:"pr,omitempty"`
+	Review *ReviewEvent `json:"review,omitempty"`
+}
+
+// PRInfo is the current state of a PR/MR.
+type PRInfo struct {
+	Number    int
+	URL       string
+	Title     string
+	State     string // open | merged | closed
+	Branch    string
+	HeadSHA   string
+	MergeSHA  string
+	Mergeable *bool // nil: not known yet
+}
+
+// ChangedFile is a file changed by a PR/MR.
+type ChangedFile struct {
+	Path    string
+	OldPath string
+	Status  string // added | modified | removed | renamed
 }
 
 // Provider is the git provider API used by Hammurapi. Methods taking a token act
@@ -129,6 +185,31 @@ type Provider interface {
 
 	VerifyWebhook(h http.Header, body []byte, secret string) bool
 	ParsePush(h http.Header, body []byte) (*PushEvent, bool, error)
+	// ParseHook normalizes push, tag, PR/MR, review and comment webhooks; nil for others.
+	ParseHook(h http.Header, body []byte) (*HookEvent, error)
+
+	// ─── PLT.HMR-0002: service repositories, bot, CI/CD ───
+
+	// Repo returns the repository this provider is bound to (owner/name).
+	Repo() string
+	// ForRepo returns the same provider bound to another repository of the instance.
+	ForRepo(repo string) Provider
+	// BotToken returns a short-lived bot token limited to the bound repository.
+	BotToken(ctx context.Context) (string, error)
+	// DefaultBranch returns the default branch of the bound repository.
+	DefaultBranch(ctx context.Context, token string) (string, error)
+	GetPR(ctx context.Context, token string, number int) (*PRInfo, error)
+	UpdatePRBranch(ctx context.Context, token string, number int) error
+	RequestReview(ctx context.Context, token string, number int, reviewers []string) error
+	CommentPR(ctx context.Context, token string, number int, body string) error
+	PRChangedFiles(ctx context.Context, token string, number int) ([]ChangedFile, error)
+	CommitParents(ctx context.Context, token, sha string) ([]string, error)
+	// IsAncestor reports whether ancestor is reachable from descendant.
+	IsAncestor(ctx context.Context, token, ancestor, descendant string) (bool, error)
+	// GroupMembers lists logins of a provider group/team (for catalog owners).
+	GroupMembers(ctx context.Context, token, group string) ([]string, error)
+	// RunPipeline starts a CI/CD pipeline (GitHub workflow_dispatch / GitLab pipeline API).
+	RunPipeline(ctx context.Context, token, workflow, ref string, params map[string]string) (string, error)
 }
 
 // TokenSource returns a valid (refreshed if needed) provider access token of a user.
@@ -154,6 +235,12 @@ type Trailers struct {
 	Agent   bool
 	Import  string
 	Delete  string
+	// PLT.HMR-0002
+	Req       []string
+	Initiator string
+	Task      string
+	Release   string
+	Generated bool
 }
 
 // Message builds a commit message with trailers.
@@ -175,6 +262,21 @@ func (t Trailers) Message(subject string) string {
 	}
 	if t.Delete != "" {
 		fmt.Fprintf(&b, "Hammurapi-Delete: %s\n", t.Delete)
+	}
+	if len(t.Req) > 0 {
+		fmt.Fprintf(&b, "Hammurapi-Req: %s\n", strings.Join(t.Req, ", "))
+	}
+	if t.Initiator != "" {
+		fmt.Fprintf(&b, "Hammurapi-Initiator: %s\n", t.Initiator)
+	}
+	if t.Task != "" {
+		fmt.Fprintf(&b, "Hammurapi-Task: %s\n", t.Task)
+	}
+	if t.Release != "" {
+		fmt.Fprintf(&b, "Hammurapi-Release: %s\n", t.Release)
+	}
+	if t.Generated {
+		b.WriteString("Hammurapi-Generated: true\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -199,12 +301,36 @@ func ParseTrailers(message string) Trailers {
 			t.Import = v
 		case "hammurapi-delete":
 			t.Delete = v
+		case "hammurapi-req":
+			for _, r := range strings.Split(v, ",") {
+				if r = strings.TrimSpace(r); r != "" {
+					t.Req = append(t.Req, r)
+				}
+			}
+		case "hammurapi-initiator":
+			t.Initiator = v
+		case "hammurapi-task":
+			t.Task = v
+		case "hammurapi-release":
+			t.Release = v
+		case "hammurapi-generated":
+			t.Generated = strings.EqualFold(v, "true")
 		}
 	}
 	return t
 }
 
 // ─── Repository layout ──────────────────────────────────────────────
+
+// ServiceBranch is the agent's branch in a service repository: hammurapi/<feature>/<service>.
+func ServiceBranch(featureKey, service string) string {
+	return "hammurapi/" + featureKey + "/" + service
+}
+
+// RevertBranch is the branch of a revert PR during a rollback.
+func RevertBranch(releaseKey, service string) string {
+	return "hammurapi/revert/" + releaseKey + "/" + service
+}
 
 // FeatureBranch returns the branch name of a feature.
 func FeatureBranch(uniqueID string) string { return "feature/" + uniqueID }
@@ -218,6 +344,11 @@ func UniqueIDFromBranch(branch string) (string, bool) {
 // SpecDir is specs/<domain>/<system>/<uniqueId>/<area>.
 func SpecDir(domainKey, systemKey, uniqueID, area string) string {
 	return fmt.Sprintf("specs/%s/%s/%s/%s", domainKey, systemKey, uniqueID, area)
+}
+
+// DiscoveryPath is the Discovery document copied into the feature folder on acceptance.
+func DiscoveryPath(domainKey, systemKey, uniqueID string) string {
+	return fmt.Sprintf("specs/%s/%s/%s/discovery.md", domainKey, systemKey, uniqueID)
 }
 
 // SpecPath is the spec.md path of a gate.

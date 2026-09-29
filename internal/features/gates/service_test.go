@@ -16,9 +16,20 @@ import (
 	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
 )
 
+type fakeGen struct {
+	areas   []domain.Area
+	comment string
+}
+
+func (g *fakeGen) Generate(_ context.Context, _ *specdata.Feature, areas []domain.Area, _ uuid.UUID, comment string) error {
+	g.areas, g.comment = areas, comment
+	return nil
+}
+
 type fixture struct {
 	store *smocks.MockStore
 	git   *gmocks.MockProvider
+	gen   *fakeGen
 	svc   *Service
 }
 
@@ -29,7 +40,8 @@ func setup(t *testing.T, feat *specdata.Feature, gates ...*specdata.Gate) *fixtu
 	tokens.EXPECT().Token(gomock.Any(), gomock.Any()).Return("tok", nil).AnyTimes()
 	ev := emocks.NewMockPublisher(ctrl)
 	ev.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes()
-	f.svc = NewService(f.store, f.git, tokens, ev, "main")
+	f.gen = &fakeGen{}
+	f.svc = NewService(f.store, f.git, tokens, ev, f.gen, "main")
 	tu.PassThroughTx(f.store)
 	f.store.EXPECT().FeatureByUniqueID(gomock.Any(), feat.UniqueID).Return(feat, nil).AnyTimes()
 	var all []specdata.Gate
@@ -42,12 +54,38 @@ func setup(t *testing.T, feat *specdata.Feature, gates ...*specdata.Gate) *fixtu
 	return f
 }
 
-// ROLE-01: an editor of product cannot edit design.
-func TestSaveRequiresEditorOfArea(t *testing.T) {
+// ROLE-02 / ROLE-03: only experts of the feature's domain edit gates.
+func TestSaveRequiresDomainExpert(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaDesign, domain.GateDraft))
-	_, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaDesign, SaveInput{Content: "x"}, false)
-	tu.Code(t, err, 403, "forbidden")
+	for _, u := range []string{"expert:PAY:product", "admin:design"} {
+		_, err := f.svc.SaveDocument(context.Background(), tu.User(u), feat.UniqueID, domain.AreaDesign, SaveInput{Content: "x"}, false)
+		tu.Code(t, err, 403, "forbidden")
+	}
+}
+
+// GEN-03: tech and qa are not edited by hand.
+func TestSaveGeneratedGate(t *testing.T) {
+	feat := tu.Feature(true)
+	f := setup(t, feat, tu.Gate(feat, domain.AreaTech, domain.GateDraft))
+	_, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaTech, SaveInput{Content: "x"}, false)
+	tu.Code(t, err, 403, "gate_generated")
+}
+
+// GEN-04 / regenerate: needs approved human gates in approval domains, passes the chat comment.
+func TestRegenerate(t *testing.T) {
+	feat := tu.Feature(true)
+	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateInReview))
+	err := f.svc.Regenerate(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaTech, "")
+	tu.Code(t, err, 409, "gates_not_approved")
+
+	f = setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved))
+	if err := f.svc.Regenerate(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaQA, "cover R2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.gen.areas) != 1 || f.gen.areas[0] != domain.AreaQA || f.gen.comment != "cover R2" {
+		t.Fatalf("generator got %+v", f.gen)
+	}
 }
 
 // LOCK-02: PUT from another user while the feature is locked → 423.
@@ -55,13 +93,13 @@ func TestSaveLockedByOther(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
 	f.store.EXPECT().AcquireLock(gomock.Any(), feat.ID, gomock.Any()).Return(&specdata.Lock{LockedBy: uuid.New(), LockedByName: "Anna"}, false, nil)
-	_, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, false)
+	_, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, false)
 	tu.Code(t, err, 423, "feature_locked")
 }
 
 func (f *fixture) lockAndFile(feat *specdata.Feature, content string) {
 	f.store.EXPECT().AcquireLock(gomock.Any(), feat.ID, gomock.Any()).Return(&specdata.Lock{}, true, nil)
-	f.git.EXPECT().GetFile(gomock.Any(), "tok", feat.Branch, "specs/FMS/CAR/FMS.CAR-0005/product/spec.md").
+	f.git.EXPECT().GetFile(gomock.Any(), "tok", feat.Branch, "specs/FMS/CAR/FTR.FMS.CAR-0005/product/spec.md").
 		Return(&git.File{Content: []byte(content)}, nil)
 }
 
@@ -70,7 +108,7 @@ func TestSaveStaleBase(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
 	f.lockAndFile(feat, "# current\n")
-	_, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct,
+	_, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct,
 		SaveInput{Content: "# mine\n", BaseSHA: git.BlobSHA([]byte("# old\n"))}, false)
 	tu.Code(t, err, 409, "stale_document")
 }
@@ -80,7 +118,7 @@ func TestSaveUnchangedIsNoop(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
 	f.lockAndFile(feat, "# same\n")
-	res, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct,
+	res, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct,
 		SaveInput{Content: "# same\n", BaseSHA: git.BlobSHA([]byte("# same\n"))}, false)
 	if err != nil || res.Commit != nil {
 		t.Fatalf("got %+v %v", res, err)
@@ -100,7 +138,7 @@ func TestSaveCommitsWithTrailers(t *testing.T) {
 			}
 			return "c2", nil
 		})
-	res, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct,
+	res, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct,
 		SaveInput{Content: "# new\n"}, true)
 	if err != nil || res.Commit == nil || *res.Commit != "c2" {
 		t.Fatalf("got %+v %v", res, err)
@@ -111,33 +149,33 @@ func TestSaveCommitsWithTrailers(t *testing.T) {
 func TestAgentCannotEditApproved(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved))
-	_, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, true)
+	_, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, true)
 	tu.Code(t, err, 409, "gate_approved")
 }
 
-// HAND-05: a handed-off feature is read-only.
-func TestSaveHandedOff(t *testing.T) {
+// CG-03: specifications are read-only during code generation.
+func TestSaveDuringCodegen(t *testing.T) {
 	feat := tu.Feature(true)
-	feat.Status = domain.FeatureHandedOff
+	feat.Phase = domain.PhaseCodegen
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved))
-	_, err := f.svc.SaveDocument(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, false)
-	tu.Code(t, err, 409, "feature_handed_off")
+	_, err := f.svc.SaveDocument(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct, SaveInput{Content: "x"}, false)
+	tu.Code(t, err, 409, "codegen_in_progress")
 }
 
-// DEL-03: the last gate cannot be deleted.
+// DEL-03: the product gate cannot be deleted.
 func TestDeleteLastGate(t *testing.T) {
 	feat := tu.Feature(true)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft))
-	err := f.svc.DeleteGate(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaProduct)
+	err := f.svc.DeleteGate(context.Background(), tu.User("expert:FMS:product"), feat.UniqueID, domain.AreaProduct)
 	tu.Code(t, err, 409, "last_gate")
 }
 
-// DEL-04: an editor of product cannot delete the design gate.
-func TestDeleteGateOfOtherArea(t *testing.T) {
+// GEN-03: a generated gate cannot be deleted.
+func TestDeleteGeneratedGate(t *testing.T) {
 	feat := tu.Feature(true)
-	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft), tu.Gate(feat, domain.AreaDesign, domain.GateDraft))
-	err := f.svc.DeleteGate(context.Background(), tu.User("editor:product"), feat.UniqueID, domain.AreaDesign)
-	tu.Code(t, err, 403, "forbidden")
+	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateDraft), tu.Gate(feat, domain.AreaTech, domain.GateDraft))
+	err := f.svc.DeleteGate(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaTech)
+	tu.Code(t, err, 403, "gate_generated")
 }
 
 // DEL-01: deletion commits removal of the whole folder with the delete trailer
@@ -147,7 +185,7 @@ func TestDeleteGate(t *testing.T) {
 	design := tu.Gate(feat, domain.AreaDesign, domain.GateInReview)
 	f := setup(t, feat, tu.Gate(feat, domain.AreaProduct, domain.GateApproved), design)
 	f.store.EXPECT().GetLock(gomock.Any(), feat.ID).Return(nil, nil)
-	dir := "specs/FMS/CAR/FMS.CAR-0005/design"
+	dir := "specs/FMS/CAR/FTR.FMS.CAR-0005/design"
 	f.git.EXPECT().ListFiles(gomock.Any(), "tok", feat.Branch, dir).Return([]string{dir + "/spec.md", dir + "/mock.png"}, nil)
 	f.git.EXPECT().Commit(gomock.Any(), "tok", feat.Branch, gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _, _, msg string, ch []git.FileChange) (string, error) {
@@ -168,7 +206,7 @@ func TestDeleteGate(t *testing.T) {
 		}
 		return nil
 	})
-	if err := f.svc.DeleteGate(context.Background(), tu.User("editor:design"), feat.UniqueID, domain.AreaDesign); err != nil {
+	if err := f.svc.DeleteGate(context.Background(), tu.User("expert:FMS:technical"), feat.UniqueID, domain.AreaDesign); err != nil {
 		t.Fatal(err)
 	}
 }

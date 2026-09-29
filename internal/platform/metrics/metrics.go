@@ -39,11 +39,41 @@ var (
 	}, []string{"area", "to"})
 )
 
+// PLT.HMR-0002
+var (
+	WorkflowRuns = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hammurapi_workflow_runs", Help: "Active workflow runs by kind and state.",
+	}, []string{"kind", "state"})
+	WorkflowTransitionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "hammurapi_workflow_transition_duration_seconds", Help: "Duration of workflow transitions.", Buckets: prometheus.DefBuckets,
+	}, []string{"kind", "step"})
+	WorkflowBlocked = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_workflow_blocked_total", Help: "Workflow runs that became blocked.",
+	}, []string{"kind", "reason"})
+	RunnerTasks = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_runner_tasks", Help: "Agent tasks by type and final status.",
+	}, []string{"type", "status"})
+	RunnerTaskDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "hammurapi_runner_task_duration_seconds", Help: "Agent task duration.", Buckets: []float64{10, 30, 60, 300, 900, 1800, 3600, 7200},
+	}, []string{"type"})
+	RunnerTokens = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_runner_tokens_total", Help: "Agent tokens used by task type.",
+	}, []string{"type"})
+	DeployRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_deploy_runs_total", Help: "Deploy runs by environment and status.",
+	}, []string{"environment", "status"})
+	ReleaseRollbacks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hammurapi_release_rollbacks_total", Help: "Rolled back releases.",
+	})
+)
+
 func init() {
 	Registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		HTTPRequests, HTTPDuration, GitAPIErrors, WebhookEvents, KafkaLag,
 		AgentSessions, AgentProcesses, GitProviderUp, GateTransitions,
+		WorkflowRuns, WorkflowTransitionDuration, WorkflowBlocked, RunnerTasks, RunnerTaskDuration,
+		RunnerTokens, DeployRuns, ReleaseRollbacks,
 	)
 }

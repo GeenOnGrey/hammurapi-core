@@ -13,7 +13,7 @@ import (
 func TestNonAdminRejected(t *testing.T) {
 	s := &Service{}
 	ctx := context.Background()
-	p := tu.User("editor:product")
+	p := tu.User("expert:FMS:product")
 	tu.Code(t, s.CreateDomain(ctx, p, "FMS", "Fleet", true), 403, "forbidden")
 	yes := false
 	tu.Code(t, s.PatchDomain(ctx, p, "FMS", nil, &yes), 403, "forbidden")

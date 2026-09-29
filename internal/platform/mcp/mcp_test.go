@@ -60,7 +60,7 @@ func TestEditUnavailableInGeneralMode(t *testing.T) {
 		t.Fatalf("edit_spec executed in general mode: %v", out)
 	}
 	// Switching the session to spec mode updates the token's rights.
-	s.Update(tok, Grant{Mode: "spec", Feature: "FMS.CAR-0005", EditorAreas: []domain.Area{domain.AreaProduct}})
+	s.Update(tok, Grant{Mode: "spec", ContextType: "feature", Feature: "FTR.FMS.CAR-0005", Expert: true})
 	_, out = call(t, s, tok, "tools/call", map[string]any{"name": "edit_spec", "arguments": map[string]any{}})
 	if out["result"].(map[string]any)["isError"] != false || *calls != 1 {
 		t.Fatalf("got %v", out)
@@ -72,13 +72,28 @@ func TestEditUnavailableInGeneralMode(t *testing.T) {
 }
 
 func TestGrantCanEditArea(t *testing.T) {
-	g := Grant{Mode: "spec", Feature: "X", EditorAreas: []domain.Area{domain.AreaProduct}}
-	if !g.CanEditArea(domain.AreaProduct) || g.CanEditArea(domain.AreaDesign) {
-		t.Fatal("area check")
+	g := Grant{Mode: "spec", ContextType: "feature", Feature: "X", Expert: true}
+	if !g.CanEditArea(domain.AreaProduct) || g.CanEditArea(domain.AreaTech) {
+		t.Fatal("generated gates are not edited by the chat agent")
 	}
-	g.Mode = "general"
+	g.Expert = false
+	if g.CanEditArea(domain.AreaProduct) {
+		t.Fatal("non-experts may not edit")
+	}
+	g.Expert, g.Mode = true, "general"
 	if g.CanEditArea(domain.AreaProduct) {
 		t.Fatal("general mode may not edit")
+	}
+}
+
+func TestResolveTaskToken(t *testing.T) {
+	s, _ := server()
+	s.Resolve = func(_ context.Context, tok string) (Grant, bool) { return Grant{Mode: "general"}, tok == "task-token" }
+	if code, _ := call(t, s, "task-token", "tools/list", nil); code != http.StatusOK {
+		t.Fatalf("resolved token rejected: %d", code)
+	}
+	if code, _ := call(t, s, "other", "tools/list", nil); code != http.StatusUnauthorized {
+		t.Fatal("unknown token accepted")
 	}
 }
 

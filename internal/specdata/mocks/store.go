@@ -15,6 +15,7 @@ import (
 
 	domain "github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	httpx "github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	postgres "github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
 	specdata "github.com/GeenOnGrey/hammurapi-core/internal/specdata"
 	uuid "github.com/google/uuid"
 	gomock "go.uber.org/mock/gomock"
@@ -132,6 +133,21 @@ func (m *MockStore) FeatureByUniqueID(ctx context.Context, uniqueID string) (*sp
 func (mr *MockStoreMockRecorder) FeatureByUniqueID(ctx, uniqueID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FeatureByUniqueID", reflect.TypeOf((*MockStore)(nil).FeatureByUniqueID), ctx, uniqueID)
+}
+
+// FeatureIssueKeys mocks base method.
+func (m *MockStore) FeatureIssueKeys(ctx context.Context, featureID uuid.UUID) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FeatureIssueKeys", ctx, featureID)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FeatureIssueKeys indicates an expected call of FeatureIssueKeys.
+func (mr *MockStoreMockRecorder) FeatureIssueKeys(ctx, featureID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FeatureIssueKeys", reflect.TypeOf((*MockStore)(nil).FeatureIssueKeys), ctx, featureID)
 }
 
 // FeaturesPendingCleanup mocks base method.
@@ -266,6 +282,20 @@ func (mr *MockStoreMockRecorder) LastSubmitter(ctx, gateID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LastSubmitter", reflect.TypeOf((*MockStore)(nil).LastSubmitter), ctx, gateID)
 }
 
+// LinkIssue mocks base method.
+func (m *MockStore) LinkIssue(ctx context.Context, featureID, issueID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkIssue", ctx, featureID, issueID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LinkIssue indicates an expected call of LinkIssue.
+func (mr *MockStoreMockRecorder) LinkIssue(ctx, featureID, issueID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkIssue", reflect.TypeOf((*MockStore)(nil).LinkIssue), ctx, featureID, issueID)
+}
+
 // ListFeatures mocks base method.
 func (m *MockStore) ListFeatures(ctx context.Context, f specdata.ListFilter) ([]specdata.ListedFeature, error) {
 	m.ctrl.T.Helper()
@@ -293,20 +323,6 @@ func (m *MockStore) MarkDeleted(ctx context.Context, id, by uuid.UUID, cleanupPe
 func (mr *MockStoreMockRecorder) MarkDeleted(ctx, id, by, cleanupPending any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkDeleted", reflect.TypeOf((*MockStore)(nil).MarkDeleted), ctx, id, by, cleanupPending)
-}
-
-// MarkHandedOff mocks base method.
-func (m *MockStore) MarkHandedOff(ctx context.Context, id, by uuid.UUID, withoutApproval bool) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkHandedOff", ctx, id, by, withoutApproval)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// MarkHandedOff indicates an expected call of MarkHandedOff.
-func (mr *MockStoreMockRecorder) MarkHandedOff(ctx, id, by, withoutApproval any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkHandedOff", reflect.TypeOf((*MockStore)(nil).MarkHandedOff), ctx, id, by, withoutApproval)
 }
 
 // MarkWebhookProcessed mocks base method.
@@ -354,6 +370,20 @@ func (mr *MockStoreMockRecorder) PeekNumber(ctx, systemID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PeekNumber", reflect.TypeOf((*MockStore)(nil).PeekNumber), ctx, systemID)
 }
 
+// Q mocks base method.
+func (m *MockStore) Q() postgres.Querier {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Q")
+	ret0, _ := ret[0].(postgres.Querier)
+	return ret0
+}
+
+// Q indicates an expected call of Q.
+func (mr *MockStoreMockRecorder) Q() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Q", reflect.TypeOf((*MockStore)(nil).Q))
+}
+
 // ReleaseLock mocks base method.
 func (m *MockStore) ReleaseLock(ctx context.Context, featureID, userID uuid.UUID) error {
 	m.ctrl.T.Helper()
@@ -396,6 +426,20 @@ func (mr *MockStoreMockRecorder) SetBranchCleanupPending(ctx, id, pending any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetBranchCleanupPending", reflect.TypeOf((*MockStore)(nil).SetBranchCleanupPending), ctx, id, pending)
 }
 
+// SetFlagKey mocks base method.
+func (m *MockStore) SetFlagKey(ctx context.Context, id uuid.UUID, flag *string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetFlagKey", ctx, id, flag)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetFlagKey indicates an expected call of SetFlagKey.
+func (mr *MockStoreMockRecorder) SetFlagKey(ctx, id, flag any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetFlagKey", reflect.TypeOf((*MockStore)(nil).SetFlagKey), ctx, id, flag)
+}
+
 // SetImportItem mocks base method.
 func (m *MockStore) SetImportItem(ctx context.Context, importID uuid.UUID, archiveID, status string, featureID *uuid.UUID, errText *string) error {
 	m.ctrl.T.Helper()
@@ -408,6 +452,20 @@ func (m *MockStore) SetImportItem(ctx context.Context, importID uuid.UUID, archi
 func (mr *MockStoreMockRecorder) SetImportItem(ctx, importID, archiveID, status, featureID, errText any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetImportItem", reflect.TypeOf((*MockStore)(nil).SetImportItem), ctx, importID, archiveID, status, featureID, errText)
+}
+
+// SetPhase mocks base method.
+func (m *MockStore) SetPhase(ctx context.Context, id uuid.UUID, phase domain.FeaturePhase) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetPhase", ctx, id, phase)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetPhase indicates an expected call of SetPhase.
+func (mr *MockStoreMockRecorder) SetPhase(ctx, id, phase any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetPhase", reflect.TypeOf((*MockStore)(nil).SetPhase), ctx, id, phase)
 }
 
 // SystemByKeys mocks base method.

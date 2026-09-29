@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
 	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
@@ -27,23 +28,29 @@ const SettingRetentionDays = "attachment_retention_days"
 
 // User is a user with roles.
 type User struct {
-	ID          uuid.UUID        `json:"id"`
-	Username    string           `json:"username"`
-	DisplayName string           `json:"displayName"`
-	AvatarURL   *string          `json:"avatarUrl"`
-	GlobalAdmin bool             `json:"globalAdmin"`
-	Roles       []auth.RoleAreas `json:"roles"`
-	CreatedAt   time.Time        `json:"createdAt"`
+	ID          uuid.UUID            `json:"id"`
+	Username    string               `json:"username"`
+	DisplayName string               `json:"displayName"`
+	AvatarURL   *string              `json:"avatarUrl"`
+	GlobalAdmin bool                 `json:"globalAdmin"`
+	AreaAdmin   []domain.Area        `json:"areaAdmin"`
+	Experts     []auth.ExpertDomains `json:"experts"`
+	CreatedAt   time.Time            `json:"createdAt"`
 }
 
-// RolesInput is the body of PUT /users/{id}/roles.
+// RolesInput is the body of PUT /users/{id}/roles. There are no editor or
+// approver roles (PLT.HMR-0002): experts are assigned per domain.
 type RolesInput struct {
-	GlobalAdmin bool             `json:"globalAdmin"`
-	Roles       []auth.RoleAreas `json:"roles"`
+	GlobalAdmin bool          `json:"globalAdmin"`
+	AreaAdmin   []domain.Area `json:"areaAdmin"`
 }
 
 // Service implements admin use cases.
-type Service struct{ pool *pgxpool.Pool }
+type Service struct {
+	pool *pgxpool.Pool
+	// RunnerExecutor is shown in the admin panel (local is not for production, RUN-10).
+	RunnerExecutor string
+}
 
 // NewService creates the service.
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
@@ -83,35 +90,38 @@ func (s *Service) Users(ctx context.Context, q string, page httpx.Page) ([]User,
 	}
 	for i := range users {
 		p := domain.NewPrincipal(users[i].ID, "", "", users[i].GlobalAdmin)
-		rr, err := s.pool.Query(ctx, `SELECT role, area FROM user_roles WHERE user_id = $1`, users[i].ID)
+		rr, err := s.pool.Query(ctx, `SELECT 'admin', area::text FROM area_admins WHERE user_id = $1
+			UNION ALL SELECT e.kind::text, d.key FROM domain_experts e JOIN domains d ON d.id = e.domain_id WHERE e.user_id = $1`, users[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		for rr.Next() {
-			var role domain.Role
-			var area domain.Area
-			if err := rr.Scan(&role, &area); err != nil {
+			var kind, target string
+			if err := rr.Scan(&kind, &target); err != nil {
 				rr.Close()
 				return nil, err
 			}
-			p.Grant(role, area)
+			if kind == "admin" {
+				p.GrantAreaAdmin(domain.Area(target))
+			} else {
+				p.GrantExpert(target, domain.ExpertKind(kind))
+			}
 		}
 		rr.Close()
-		users[i].Roles = auth.RolesOf(p)
+		users[i].AreaAdmin = p.AdminAreas()
+		if users[i].AreaAdmin == nil {
+			users[i].AreaAdmin = []domain.Area{}
+		}
+		users[i].Experts = auth.ExpertsOf(p)
 	}
 	return users, nil
 }
 
 // SetRoles replaces the user's roles. The last global administrator cannot be demoted.
 func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, in RolesInput) error {
-	for _, ra := range in.Roles {
-		if !ra.Role.Valid() {
-			return apperr.Unprocessable("invalid_role", fmt.Sprintf("unknown role %q", ra.Role))
-		}
-		for _, a := range ra.Areas {
-			if !a.Valid() {
-				return apperr.Unprocessable("invalid_area", fmt.Sprintf("unknown area %q", a))
-			}
+	for _, a := range in.AreaAdmin {
+		if !a.Valid() {
+			return apperr.Unprocessable("invalid_area", fmt.Sprintf("unknown area %q", a))
 		}
 	}
 	return postgres.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -138,14 +148,12 @@ func (s *Service) SetRoles(ctx context.Context, userID uuid.UUID, in RolesInput)
 		if _, err := tx.Exec(ctx, `UPDATE users SET is_global_admin = $2 WHERE id = $1`, userID, in.GlobalAdmin); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, userID); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM area_admins WHERE user_id = $1`, userID); err != nil {
 			return err
 		}
-		for _, ra := range in.Roles {
-			for _, a := range ra.Areas {
-				if _, err := tx.Exec(ctx, `INSERT INTO user_roles (user_id, role, area) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, userID, ra.Role, a); err != nil {
-					return err
-				}
+		for _, a := range in.AreaAdmin {
+			if _, err := tx.Exec(ctx, `INSERT INTO area_admins (user_id, area) VALUES ($1,$2) ON CONFLICT DO NOTHING`, userID, a); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -176,7 +184,34 @@ func RetentionDays(ctx context.Context, q postgres.Querier) (int, error) {
 
 // Settings is the instance settings object.
 type Settings struct {
-	AttachmentRetentionDays int `json:"attachmentRetentionDays"`
+	AttachmentRetentionDays int                    `json:"attachmentRetentionDays"`
+	FeatureFlags            FlagsView              `json:"featureFlags"`
+	Stage                   cycledata.StageSetting `json:"stage"`
+	RunnerExecutor          string                 `json:"runnerExecutor"`
+}
+
+// FlagsView is the feature flag setting without secrets.
+type FlagsView struct {
+	Enabled       bool `json:"enabled"`
+	ActiveSecrets int  `json:"activeSecrets"`
+}
+
+func (s *Service) settings(ctx context.Context) (*Settings, error) {
+	n, err := RetentionDays(ctx, s.pool)
+	if err != nil {
+		return nil, err
+	}
+	out := &Settings{AttachmentRetentionDays: n, RunnerExecutor: s.RunnerExecutor}
+	cd := cycledata.New(s.pool)
+	var fs cycledata.FlagsSetting
+	if _, err := cd.Setting(ctx, "feature_flags", &fs); err != nil {
+		return nil, err
+	}
+	out.FeatureFlags = FlagsView{Enabled: fs.Enabled, ActiveSecrets: len(fs.SecretRefs)}
+	if _, err := cd.Setting(ctx, "stage", &out.Stage); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Routes mounts /admin/api/v1 users and settings.
@@ -230,11 +265,11 @@ func (s *Service) Routes(r chi.Router) {
 		if err := requireGlobal(p); err != nil {
 			return err
 		}
-		n, err := RetentionDays(r.Context(), s.pool)
+		out, err := s.settings(r.Context())
 		if err != nil {
 			return err
 		}
-		httpx.JSON(w, 200, Settings{AttachmentRetentionDays: n})
+		httpx.JSON(w, 200, out)
 		return nil
 	}))
 	r.Patch("/settings", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
@@ -247,6 +282,12 @@ func (s *Service) Routes(r chi.Router) {
 		}
 		var in struct {
 			AttachmentRetentionDays *int `json:"attachmentRetentionDays"`
+			FeatureFlags            *struct {
+				Enabled bool `json:"enabled"`
+			} `json:"featureFlags"`
+			Stage *struct {
+				Enabled bool `json:"enabled"`
+			} `json:"stage"`
 		}
 		if err := httpx.Decode(r, &in); err != nil {
 			return err
@@ -262,11 +303,27 @@ func (s *Service) Routes(r chi.Router) {
 				return err
 			}
 		}
-		n, err := RetentionDays(r.Context(), s.pool)
+		cd := cycledata.New(s.pool)
+		if in.FeatureFlags != nil {
+			var fs cycledata.FlagsSetting
+			if _, err := cd.Setting(r.Context(), "feature_flags", &fs); err != nil {
+				return err
+			}
+			fs.Enabled = in.FeatureFlags.Enabled
+			if err := cd.PutSetting(r.Context(), "feature_flags", fs, &p.UserID); err != nil {
+				return err
+			}
+		}
+		if in.Stage != nil {
+			if err := cd.PutSetting(r.Context(), "stage", cycledata.StageSetting{Enabled: in.Stage.Enabled}, &p.UserID); err != nil {
+				return err
+			}
+		}
+		out, err := s.settings(r.Context())
 		if err != nil {
 			return err
 		}
-		httpx.JSON(w, 200, Settings{AttachmentRetentionDays: n})
+		httpx.JSON(w, 200, out)
 		return nil
 	}))
 }

@@ -27,30 +27,47 @@ import (
 // ProtocolVersion is the MCP revision implemented.
 const ProtocolVersion = "2025-06-18"
 
+// Chat modes and agent contexts (PLT.HMR-0002 arch §6). The mode selects
+// which tools are offered.
+const (
+	ModeGeneral   = "general"   // chat: questions across all specifications
+	ModeSpec      = "spec"      // chat: working on an issue, feature or release
+	ModeDiscovery = "discovery" // worker: Discovery of an issue
+	ModeGenerate  = "generate"  // worker: generation of tech and qa
+	ModeCheck     = "check"     // worker: code vs specification check
+	ModeTask      = "task"      // runner: code generation task
+)
+
 // Grant is the permission scope of an MCP token.
 type Grant struct {
 	UserID uuid.UUID
-	// Mode is "general" or "spec".
+	// Mode is a chat mode or an agent context.
 	Mode string
-	// Feature is the uniqueId of the feature in spec mode.
+	// ContextType is issue, feature or release; ContextKey its key.
+	ContextType string
+	ContextKey  string
+	// Feature is the feature key when the context is a feature (or the feature of a task).
 	Feature string
 	// Area is the currently open area, if any.
 	Area domain.Area
-	// EditorAreas are areas where the user is an editor.
-	EditorAreas []domain.Area
+	// Expert: the user is an expert of the context's domain and may edit.
+	Expert bool
+	// Subject is the issue, feature, release or task id of worker and runner contexts.
+	Subject uuid.UUID
+	// Sink receives structured results of worker contexts (save_discovery,
+	// submit_gate, report_discrepancy); nil in the chat.
+	Sink func(kind string, payload json.RawMessage) error
 }
 
-// CanEditArea reports whether the grant allows edit_spec in area a.
+// CanEditArea reports whether the grant allows edit_spec in area a: the chat
+// in a feature context, an expert, and a gate the agent does not generate.
 func (g Grant) CanEditArea(a domain.Area) bool {
-	if g.Mode != "spec" || g.Feature == "" {
-		return false
-	}
-	for _, x := range g.EditorAreas {
-		if x == a {
-			return true
-		}
-	}
-	return false
+	return g.Mode == ModeSpec && g.ContextType == "feature" && g.Feature != "" && g.Expert && !a.Generated()
+}
+
+// CanEditDiscovery reports whether the grant allows edit_discovery.
+func (g Grant) CanEditDiscovery() bool {
+	return g.Mode == ModeSpec && g.ContextType == "issue" && g.ContextKey != "" && g.Expert
 }
 
 // Tool is an MCP tool.
@@ -82,6 +99,8 @@ type Server struct {
 	mu     sync.RWMutex
 	grants map[string]Grant
 	tools  []Tool
+	// Resolve looks up tokens not issued by this server (runner task tokens).
+	Resolve func(ctx context.Context, token string) (Grant, bool)
 }
 
 // NewServer creates a server.
@@ -140,6 +159,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	g, ok := s.grant(tok)
+	if !ok && s.Resolve != nil && tok != "" {
+		g, ok = s.Resolve(r.Context(), tok)
+	}
 	if !ok {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return

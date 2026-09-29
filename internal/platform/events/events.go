@@ -28,10 +28,19 @@ const (
 	AgentDone        = "agent.done"
 	AgentError       = "agent.error"
 	GateUpdated      = "gate.updated"
-	FeatureHandedOff = "feature.handed_off"
 	FeatureDeleted   = "feature.deleted"
 	ApprovalsChanged = "approvals.changed"
 	ImportProgress   = "import.progress"
+
+	// PLT.HMR-0002
+	IssueUpdated      = "issue.updated"
+	DiscoveryProgress = "discovery.progress"
+	FeatureUpdated    = "feature.updated"
+	TaskProgress      = "task.progress"
+	ValidationUpdated = "validation.updated"
+	ReleaseUpdated    = "release.updated"
+	ReleaseBlocked    = "release.blocked"
+	FocusChanged      = "focus.changed"
 )
 
 const channel = "hammurapi_events"

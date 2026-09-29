@@ -29,7 +29,7 @@ func setup(t *testing.T, gates ...*specdata.Gate) *fixture {
 	f := &fixture{store: smocks.NewMockStore(ctrl), gates: map[domain.Area]*specdata.Gate{}}
 	ev := emocks.NewMockPublisher(ctrl)
 	ev.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes()
-	f.proc = NewProcessor(f.store, nil, ev)
+	f.proc = NewProcessor(f.store, nil, ev, nil, nil, "")
 	tu.PassThroughTx(f.store)
 	f.feat = tu.Feature(true)
 	for _, g := range gates {
@@ -78,7 +78,7 @@ func (f *fixture) types() []domain.GateEventType {
 	return out
 }
 
-const dir = "specs/FMS/CAR/FMS.CAR-0005/"
+const dir = "specs/FMS/CAR/FTR.FMS.CAR-0005/"
 
 // GATE-02 / GATE-04: an edit made anywhere resets an in-review gate to draft.
 func TestEditResetsGate(t *testing.T) {

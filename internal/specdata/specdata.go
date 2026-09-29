@@ -1,7 +1,7 @@
-// Package specdata is the shared projection of features, gates, gate history
-// and feature locks. Several slices (features, gates, approvals, handoff,
-// webhooks, imports, agent) read and write the same rows, so the repository
-// lives here instead of being duplicated per slice.
+// Package specdata is the shared projection of features (solutions), gates,
+// gate history and feature locks. Several slices (features, gates, approvals,
+// codegen, validation, releases, webhooks, imports, agent) read and write the
+// same rows, so the repository lives here instead of being duplicated per slice.
 package specdata
 
 //go:generate go tool mockgen -destination=mocks/store.go -package=mocks . Store
@@ -15,6 +15,7 @@ import (
 
 	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
 	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // ErrNotFound is returned when a row does not exist.
@@ -33,33 +34,33 @@ type System struct {
 	ApprovalRequired bool
 }
 
-// Feature is a feature row joined with its system, domain and user names.
+// Feature is a feature (solution, FTR) row joined with its system, domain and user names.
 type Feature struct {
-	ID                       uuid.UUID
-	UniqueID                 string
-	SystemID                 uuid.UUID
-	DomainKey                string
-	SystemKey                string
-	ApprovalRequired         bool
-	Number                   int
-	Title                    string
-	Branch                   string
-	PRNumber                 int
-	PRURL                    string
-	Status                   domain.FeatureStatus
-	ParentID                 *uuid.UUID
-	ParentUniqueID           *string
-	CreatedBy                uuid.UUID
-	CreatedByName            string
-	CreatedAt                time.Time
-	HandedOffBy              *uuid.UUID
-	HandedOffByName          *string
-	HandedOffAt              *time.Time
-	HandedOffWithoutApproval bool
-	DeletedBy                *uuid.UUID
-	DeletedByName            *string
-	DeletedAt                *time.Time
-	BranchCleanupPending     bool
+	ID                   uuid.UUID
+	UniqueID             string // FTR.FMS.CAR-0007
+	SystemID             uuid.UUID
+	DomainKey            string
+	SystemKey            string
+	ApprovalRequired     bool
+	Number               int
+	Title                string
+	Branch               string
+	PRNumber             int // specification PR/MR
+	PRURL                string
+	Phase                domain.FeaturePhase
+	IsProblem            bool
+	Imported             bool
+	Metric               []byte // JSON from Discovery
+	FlagKey              *string
+	ParentID             *uuid.UUID
+	ParentUniqueID       *string
+	CreatedBy            uuid.UUID
+	CreatedByName        string
+	CreatedAt            time.Time
+	DeletedBy            *uuid.UUID
+	DeletedByName        *string
+	DeletedAt            *time.Time
+	BranchCleanupPending bool
 }
 
 // IsFix reports whether the feature is a fix feature.
@@ -71,6 +72,7 @@ type Gate struct {
 	FeatureID      uuid.UUID
 	Area           domain.Area
 	Status         domain.GateStatus
+	Generated      bool
 	HeadCommit     string
 	SubmittedAt    *time.Time
 	ApprovedCommit *string
@@ -107,16 +109,17 @@ type Lock struct {
 
 // FeatureRef is a short reference to a feature.
 type FeatureRef struct {
-	UniqueID string               `json:"uniqueId"`
-	Title    string               `json:"title"`
-	Status   domain.FeatureStatus `json:"status"`
+	UniqueID string              `json:"uniqueId"`
+	Title    string              `json:"title"`
+	Phase    domain.FeaturePhase `json:"phase"`
 }
 
-// ListFilter filters the home page feature list.
+// ListFilter filters the feature list of the Development stage.
 type ListFilter struct {
 	UserID uuid.UUID
 	Domain string // "mine", "all" or a domain key
-	Status string // "in_progress", "handed_off", "all"
+	Phase  string // "", "spec", "codegen", "validation"
+	Status string // "active" (default), "released", "rolled_back", "all"
 	Query  string
 	Page   httpx.Page
 }
@@ -124,13 +127,16 @@ type ListFilter struct {
 // ListedFeature is a row of the feature list with its gates.
 type ListedFeature struct {
 	Feature
-	Gates []Gate
+	Gates  []Gate
+	Issues []string
 }
 
 // Store is the repository of the spec projection.
 type Store interface {
 	// InTx runs fn with a transactional store.
 	InTx(ctx context.Context, fn func(Store) error) error
+	// Q is the underlying pool or transaction, for other repositories (cycledata) in the same transaction.
+	Q() postgres.Querier
 
 	SystemByKeys(ctx context.Context, domainKey, systemKey string) (*System, error)
 	// NextNumber increments the system counter; the row stays locked until the transaction ends.
@@ -141,7 +147,10 @@ type Store interface {
 	FeatureByUniqueID(ctx context.Context, uniqueID string) (*Feature, error)
 	FeatureByID(ctx context.Context, id uuid.UUID) (*Feature, error)
 	InsertFeature(ctx context.Context, f *Feature) error
-	MarkHandedOff(ctx context.Context, id, by uuid.UUID, withoutApproval bool) error
+	SetPhase(ctx context.Context, id uuid.UUID, phase domain.FeaturePhase) error
+	SetFlagKey(ctx context.Context, id uuid.UUID, flag *string) error
+	LinkIssue(ctx context.Context, featureID, issueID uuid.UUID) error
+	FeatureIssueKeys(ctx context.Context, featureID uuid.UUID) ([]string, error)
 	MarkDeleted(ctx context.Context, id, by uuid.UUID, cleanupPending bool) error
 	SetBranchCleanupPending(ctx context.Context, id uuid.UUID, pending bool) error
 	FeaturesPendingCleanup(ctx context.Context) ([]Feature, error)

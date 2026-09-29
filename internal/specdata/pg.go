@@ -23,6 +23,12 @@ type PG struct {
 // NewPG creates a store on the pool.
 func NewPG(pool *pgxpool.Pool) *PG { return &PG{pool: pool, q: pool} }
 
+// NewPGTx wraps an open transaction (e.g. of a workflow transition) as a store.
+func NewPGTx(pool *pgxpool.Pool, tx pgx.Tx) *PG { return &PG{pool: pool, q: tx} }
+
+// Q implements Store.
+func (s *PG) Q() postgres.Querier { return s.q }
+
 // InTx implements Store. Nested calls reuse the outer transaction.
 func (s *PG) InTx(ctx context.Context, fn func(Store) error) error {
 	if _, ok := s.q.(pgx.Tx); ok {
@@ -67,9 +73,8 @@ func (s *PG) PeekNumber(ctx context.Context, systemID uuid.UUID) (int, error) {
 
 const featureCols = `
 	f.id, f.unique_id, f.system_id, d.key, s.key, d.approval_required, f.number, f.title,
-	f.branch_name, f.pr_number, f.pr_url, f.status, f.parent_id, p.unique_id,
-	f.created_by, cu.display_name, f.created_at,
-	f.handed_off_by, hu.display_name, f.handed_off_at, f.handed_off_without_approval,
+	f.branch_name, f.pr_number, f.pr_url, f.phase, f.is_problem, f.imported, f.metric, f.flag_key,
+	f.parent_id, p.unique_id, f.created_by, cu.display_name, f.created_at,
 	f.deleted_by, du.display_name, f.deleted_at, f.branch_cleanup_pending`
 
 const featureFrom = `
@@ -78,15 +83,13 @@ const featureFrom = `
 	JOIN domains d ON d.id = s.domain_id
 	JOIN users cu ON cu.id = f.created_by
 	LEFT JOIN features p ON p.id = f.parent_id
-	LEFT JOIN users hu ON hu.id = f.handed_off_by
 	LEFT JOIN users du ON du.id = f.deleted_by`
 
 func scanFeature(row pgx.Row, extra ...any) (*Feature, error) {
 	var f Feature
 	dest := []any{&f.ID, &f.UniqueID, &f.SystemID, &f.DomainKey, &f.SystemKey, &f.ApprovalRequired, &f.Number, &f.Title,
-		&f.Branch, &f.PRNumber, &f.PRURL, &f.Status, &f.ParentID, &f.ParentUniqueID,
-		&f.CreatedBy, &f.CreatedByName, &f.CreatedAt,
-		&f.HandedOffBy, &f.HandedOffByName, &f.HandedOffAt, &f.HandedOffWithoutApproval,
+		&f.Branch, &f.PRNumber, &f.PRURL, &f.Phase, &f.IsProblem, &f.Imported, &f.Metric, &f.FlagKey,
+		&f.ParentID, &f.ParentUniqueID, &f.CreatedBy, &f.CreatedByName, &f.CreatedAt,
 		&f.DeletedBy, &f.DeletedByName, &f.DeletedAt, &f.BranchCleanupPending}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
@@ -105,21 +108,48 @@ func (s *PG) FeatureByID(ctx context.Context, id uuid.UUID) (*Feature, error) {
 }
 
 func (s *PG) InsertFeature(ctx context.Context, f *Feature) error {
+	if f.Phase == "" {
+		f.Phase = domain.PhaseSpec
+	}
 	return s.q.QueryRow(ctx, `
-		INSERT INTO features (unique_id, system_id, number, title, branch_name, pr_number, pr_url, status, parent_id, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, created_at`,
-		f.UniqueID, f.SystemID, f.Number, f.Title, f.Branch, f.PRNumber, f.PRURL, domain.FeatureInProgress, f.ParentID, f.CreatedBy).
+		INSERT INTO features (unique_id, system_id, number, title, branch_name, pr_number, pr_url, phase,
+			is_problem, imported, metric, flag_key, parent_id, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id, created_at`,
+		f.UniqueID, f.SystemID, f.Number, f.Title, f.Branch, f.PRNumber, f.PRURL, f.Phase,
+		f.IsProblem, f.Imported, f.Metric, f.FlagKey, f.ParentID, f.CreatedBy).
 		Scan(&f.ID, &f.CreatedAt)
 }
 
-func (s *PG) MarkHandedOff(ctx context.Context, id, by uuid.UUID, withoutApproval bool) error {
-	_, err := s.q.Exec(ctx, `UPDATE features SET status = 'handed_off', handed_off_by = $2, handed_off_at = now(),
-		handed_off_without_approval = $3 WHERE id = $1`, id, by, withoutApproval)
+func (s *PG) SetPhase(ctx context.Context, id uuid.UUID, phase domain.FeaturePhase) error {
+	_, err := s.q.Exec(ctx, `UPDATE features SET phase = $2 WHERE id = $1`, id, phase)
 	return err
 }
 
+func (s *PG) SetFlagKey(ctx context.Context, id uuid.UUID, flag *string) error {
+	_, err := s.q.Exec(ctx, `UPDATE features SET flag_key = $2 WHERE id = $1`, id, flag)
+	return err
+}
+
+func (s *PG) LinkIssue(ctx context.Context, featureID, issueID uuid.UUID) error {
+	_, err := s.q.Exec(ctx, `INSERT INTO feature_issues (feature_id, issue_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, featureID, issueID)
+	return err
+}
+
+func (s *PG) FeatureIssueKeys(ctx context.Context, featureID uuid.UUID) ([]string, error) {
+	rows, err := s.q.Query(ctx, `SELECT i.key FROM feature_issues fi JOIN issues i ON i.id = fi.issue_id
+		WHERE fi.feature_id = $1 ORDER BY i.key`, featureID)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if keys == nil {
+		keys = []string{}
+	}
+	return keys, err
+}
+
 func (s *PG) MarkDeleted(ctx context.Context, id, by uuid.UUID, cleanupPending bool) error {
-	_, err := s.q.Exec(ctx, `UPDATE features SET status = 'deleted', deleted_by = $2, deleted_at = now(),
+	_, err := s.q.Exec(ctx, `UPDATE features SET phase = 'deleted', deleted_by = $2, deleted_at = now(),
 		branch_cleanup_pending = $3 WHERE id = $1`, id, by, cleanupPending)
 	return err
 }
@@ -147,8 +177,8 @@ func (s *PG) FeaturesPendingCleanup(ctx context.Context) ([]Feature, error) {
 }
 
 func (s *PG) Fixes(ctx context.Context, parentID uuid.UUID) ([]FeatureRef, error) {
-	rows, err := s.q.Query(ctx, `SELECT unique_id, title, status FROM features
-		WHERE parent_id = $1 AND status <> 'deleted' ORDER BY number`, parentID)
+	rows, err := s.q.Query(ctx, `SELECT unique_id, title, phase FROM features
+		WHERE parent_id = $1 AND phase <> 'deleted' ORDER BY number`, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +186,7 @@ func (s *PG) Fixes(ctx context.Context, parentID uuid.UUID) ([]FeatureRef, error
 	out := []FeatureRef{}
 	for rows.Next() {
 		var r FeatureRef
-		if err := rows.Scan(&r.UniqueID, &r.Title, &r.Status); err != nil {
+		if err := rows.Scan(&r.UniqueID, &r.Title, &r.Phase); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -165,7 +195,7 @@ func (s *PG) Fixes(ctx context.Context, parentID uuid.UUID) ([]FeatureRef, error
 }
 
 func (s *PG) ListFeatures(ctx context.Context, lf ListFilter) ([]ListedFeature, error) {
-	where := []string{"f.status <> 'deleted'"}
+	where := []string{"f.phase <> 'deleted'"}
 	args := []any{}
 	arg := func(v any) string {
 		args = append(args, v)
@@ -179,10 +209,16 @@ func (s *PG) ListFeatures(ctx context.Context, lf ListFilter) ([]ListedFeature, 
 		where = append(where, "d.key = "+arg(lf.Domain))
 	}
 	switch lf.Status {
-	case "", "in_progress":
-		where = append(where, "f.status = 'in_progress'")
-	case "handed_off":
-		where = append(where, "f.status = 'handed_off'")
+	case "", "active":
+		where = append(where, "f.phase IN ('spec','codegen','validation')")
+	case "released":
+		where = append(where, "f.phase = 'released'")
+	case "rolled_back":
+		where = append(where, "f.phase = 'rolled_back'")
+	}
+	switch lf.Phase {
+	case "spec", "codegen", "validation":
+		where = append(where, "f.phase = "+arg(lf.Phase)+"::feature_phase")
 	}
 	if q := strings.TrimSpace(lf.Query); q != "" {
 		p := arg("%" + q + "%")
@@ -223,13 +259,30 @@ func (s *PG) ListFeatures(ctx context.Context, lf ListFilter) ([]ListedFeature, 
 	for _, g := range gates {
 		byFeature[g.FeatureID] = append(byFeature[g.FeatureID], g)
 	}
+	irows, err := s.q.Query(ctx, `SELECT fi.feature_id, i.key FROM feature_issues fi JOIN issues i ON i.id = fi.issue_id
+		WHERE fi.feature_id = ANY($1) ORDER BY i.key`, ids)
+	if err != nil {
+		return nil, err
+	}
+	issues := map[uuid.UUID][]string{}
+	for irows.Next() {
+		var fid uuid.UUID
+		var key string
+		if err := irows.Scan(&fid, &key); err != nil {
+			irows.Close()
+			return nil, err
+		}
+		issues[fid] = append(issues[fid], key)
+	}
+	irows.Close()
 	for i := range out {
 		out[i].Gates = byFeature[out[i].ID]
+		out[i].Issues = issues[out[i].ID]
 	}
-	return out, nil
+	return out, irows.Err()
 }
 
-const gateCols = `g.id, g.feature_id, g.area, g.status, g.head_commit, g.submitted_at, g.approved_commit,
+const gateCols = `g.id, g.feature_id, g.area, g.status, g.generated, g.head_commit, g.submitted_at, g.approved_commit,
 	g.approved_by, au.display_name, g.approved_at, g.created_by, g.created_at, g.deleted_by, g.deleted_at`
 
 func (s *PG) gatesWhere(ctx context.Context, cond string, args ...any) ([]Gate, error) {
@@ -242,7 +295,7 @@ func (s *PG) gatesWhere(ctx context.Context, cond string, args ...any) ([]Gate, 
 	var out []Gate
 	for rows.Next() {
 		var g Gate
-		if err := rows.Scan(&g.ID, &g.FeatureID, &g.Area, &g.Status, &g.HeadCommit, &g.SubmittedAt, &g.ApprovedCommit,
+		if err := rows.Scan(&g.ID, &g.FeatureID, &g.Area, &g.Status, &g.Generated, &g.HeadCommit, &g.SubmittedAt, &g.ApprovedCommit,
 			&g.ApprovedBy, &g.ApprovedByName, &g.ApprovedAt, &g.CreatedBy, &g.CreatedAt, &g.DeletedBy, &g.DeletedAt); err != nil {
 			return nil, err
 		}
@@ -267,9 +320,9 @@ func (s *PG) ActiveGate(ctx context.Context, featureID uuid.UUID, area domain.Ar
 }
 
 func (s *PG) InsertGate(ctx context.Context, g *Gate) error {
-	return s.q.QueryRow(ctx, `INSERT INTO gates (feature_id, area, status, head_commit, submitted_at, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
-		g.FeatureID, g.Area, g.Status, g.HeadCommit, g.SubmittedAt, g.CreatedBy).Scan(&g.ID, &g.CreatedAt)
+	return s.q.QueryRow(ctx, `INSERT INTO gates (feature_id, area, status, generated, head_commit, submitted_at, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`,
+		g.FeatureID, g.Area, g.Status, g.Generated, g.HeadCommit, g.SubmittedAt, g.CreatedBy).Scan(&g.ID, &g.CreatedAt)
 }
 
 func (s *PG) SaveGate(ctx context.Context, g *Gate) error {

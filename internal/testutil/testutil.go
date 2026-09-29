@@ -16,32 +16,42 @@ import (
 	smocks "github.com/GeenOnGrey/hammurapi-core/internal/specdata/mocks"
 )
 
-// User builds a principal from grants like "editor:product" or "global".
+// User builds a principal from grants:
+//
+//	"global"                 global administrator
+//	"admin:<area>"           area administrator
+//	"expert:<DOMAIN>:<kind>" product or technical expert of a domain
+//	"owner:<service>"        owner of a service
 func User(grants ...string) *domain.Principal {
 	p := domain.NewPrincipal(uuid.New(), "user", "Test User", false)
 	for _, g := range grants {
-		if g == "global" {
+		parts := strings.Split(g, ":")
+		switch parts[0] {
+		case "global":
 			p.GlobalAdmin = true
-			continue
+		case "admin":
+			p.GrantAreaAdmin(domain.Area(parts[1]))
+		case "expert":
+			p.GrantExpert(parts[1], domain.ExpertKind(parts[2]))
+		case "owner":
+			p.GrantOwner(parts[1])
 		}
-		role, area, _ := strings.Cut(g, ":")
-		p.Grant(domain.Role(role), domain.Area(area))
 	}
 	return p
 }
 
-// Feature builds an in-progress feature FMS.CAR-0005.
+// Feature builds a feature FTR.FMS.CAR-0005 in the spec phase.
 func Feature(approvalRequired bool) *specdata.Feature {
 	return &specdata.Feature{
-		ID: uuid.New(), UniqueID: "FMS.CAR-0005", SystemID: uuid.New(), DomainKey: "FMS", SystemKey: "CAR",
-		ApprovalRequired: approvalRequired, Number: 5, Title: "Onboarding", Branch: "feature/FMS.CAR-0005",
-		PRNumber: 42, PRURL: "https://git.example/mr/42", Status: domain.FeatureInProgress, CreatedAt: time.Now(),
+		ID: uuid.New(), UniqueID: "FTR.FMS.CAR-0005", SystemID: uuid.New(), DomainKey: "FMS", SystemKey: "CAR",
+		ApprovalRequired: approvalRequired, Number: 5, Title: "Onboarding", Branch: "feature/FTR.FMS.CAR-0005",
+		PRNumber: 42, PRURL: "https://git.example/mr/42", Phase: domain.PhaseSpec, CreatedAt: time.Now(),
 	}
 }
 
 // Gate builds an active gate.
 func Gate(f *specdata.Feature, area domain.Area, status domain.GateStatus) *specdata.Gate {
-	return &specdata.Gate{ID: uuid.New(), FeatureID: f.ID, Area: area, Status: status, HeadCommit: "sha-" + string(area), CreatedAt: time.Now()}
+	return &specdata.Gate{ID: uuid.New(), FeatureID: f.ID, Area: area, Status: status, Generated: area.Generated(), HeadCommit: "sha-" + string(area), CreatedAt: time.Now()}
 }
 
 // PassThroughTx makes store.InTx run the callback with the same mock.

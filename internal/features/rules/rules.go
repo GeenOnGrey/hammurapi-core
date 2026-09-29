@@ -87,12 +87,12 @@ func NewService(pool *pgxpool.Pool, provider git.Provider, tokens git.TokenSourc
 
 // CanView reports read access: area admins and global admins.
 func CanView(p *domain.Principal, a domain.Area) bool {
-	return p.GlobalAdmin || p.Has(domain.RoleAdmin, a)
+	return p.GlobalAdmin || p.IsAreaAdmin(a)
 }
 
 // CanChange reports write access: only area admins (a global admin without the
 // area role can only read).
-func CanChange(p *domain.Principal, a domain.Area) bool { return p.Has(domain.RoleAdmin, a) }
+func CanChange(p *domain.Principal, a domain.Area) bool { return p.IsAreaAdmin(a) }
 
 // Current reads both templates of an area.
 func (s *Service) Current(ctx context.Context, p *domain.Principal, area domain.Area) ([]RuleFile, error) {

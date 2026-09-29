@@ -6,6 +6,9 @@
 //   - "fs"              → asks the client for fs/read_text_file and reports the result
 //   - "tools"           → calls MCP tools/list on the session's HTTP MCP server
 //   - "edit <area>: <markdown>" → calls the edit_spec MCP tool
+//   - "[hammurapi:task=…]" prompts of Hammurapi's worker and runner contexts →
+//     scripted Discovery, tech/qa generation, code generation (files written
+//     through ACP fs), review handling and checks (see scenarios.go)
 //
 // It is not a real agent; do not use it in production.
 package main
@@ -151,6 +154,10 @@ func handle(m msg) {
 }
 
 func answer(session, text string) {
+	if task, kv, ok := header(text); ok {
+		scenario(session, task, kv, text)
+		return
+	}
 	switch {
 	case text == "crash":
 		chunk(session, "going down…")

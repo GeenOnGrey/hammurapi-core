@@ -134,18 +134,29 @@ func (r *Repository) Principal(ctx context.Context, userID uuid.UUID) (*domain.P
 		return nil, err
 	}
 	p := domain.NewPrincipal(userID, username, name, ga)
-	rows, err := r.pool.Query(ctx, `SELECT role, area FROM user_roles WHERE user_id = $1`, userID)
+	rows, err := r.pool.Query(ctx, `
+		SELECT 'admin', area::text, '' FROM area_admins WHERE user_id = $1
+		UNION ALL
+		SELECT 'expert', e.kind::text, d.key FROM domain_experts e JOIN domains d ON d.id = e.domain_id WHERE e.user_id = $1
+		UNION ALL
+		SELECT 'owner', '', s.key FROM service_owners o JOIN services s ON s.id = o.service_id WHERE o.user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var role domain.Role
-		var area domain.Area
-		if err := rows.Scan(&role, &area); err != nil {
+		var kind, val, key string
+		if err := rows.Scan(&kind, &val, &key); err != nil {
 			return nil, err
 		}
-		p.Grant(role, area)
+		switch kind {
+		case "admin":
+			p.GrantAreaAdmin(domain.Area(val))
+		case "expert":
+			p.GrantExpert(key, domain.ExpertKind(val))
+		case "owner":
+			p.GrantOwner(key)
+		}
 	}
 	return p, rows.Err()
 }

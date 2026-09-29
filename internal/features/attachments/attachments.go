@@ -115,8 +115,8 @@ func sanitizeName(n string) string {
 	return n
 }
 
-const selectCols = `SELECT a.id, a.file_name, a.mime_type, a.size_bytes, a.message_id, f.unique_id, m.mode::text, a.created_at, a.s3_key, a.user_id
-	FROM attachments a LEFT JOIN chat_messages m ON m.id = a.message_id LEFT JOIN features f ON f.id = m.feature_id`
+const selectCols = `SELECT a.id, a.file_name, a.mime_type, a.size_bytes, a.message_id, m.context_key, m.mode::text, a.created_at, a.s3_key, a.user_id
+	FROM attachments a LEFT JOIN chat_messages m ON m.id = a.message_id`
 
 func scan(row interface{ Scan(...any) error }) (*Attachment, error) {
 	var a Attachment

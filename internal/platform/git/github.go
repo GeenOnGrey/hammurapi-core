@@ -24,6 +24,7 @@ type GitHub struct {
 	baseURL string
 	repo    string // owner/name
 	oauth   oauth2.Config
+	app     *githubApp
 }
 
 // NewGitHub builds a GitHub provider. baseURL is https://github.com or a GHE host.
