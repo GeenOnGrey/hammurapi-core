@@ -31,5 +31,8 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Codegraph
+.codegraph/
+
 # Build output
 bin/
