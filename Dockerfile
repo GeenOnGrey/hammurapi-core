@@ -28,7 +28,7 @@ RUN test -n "$AGENT_VERSION" \
  && npm cache clean --force && rm -rf /var/lib/apt/lists/* /root/.npm \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
- && command -v claude-agent-acp && ! command -v npm \
+ && test -x /usr/local/bin/claude-agent-acp && test ! -e /usr/local/bin/npm \
  && mkdir -p /var/lib/hammurapi/runs && chown 1000:1000 /var/lib/hammurapi/runs
 COPY --from=build /out/hammurapi /usr/local/bin/hammurapi
 LABEL org.opencontainers.image.title="hammurapi-core" \
