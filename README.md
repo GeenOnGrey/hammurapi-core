@@ -87,11 +87,11 @@ A tag `vX.Y.Z` runs `.github/workflows/release.yml`: lint (golangci-lint) ∥ te
 `ghcr.io/greenongrey/hammurapi-core` (target `release` of the `Dockerfile`: Hammurapi + the ACP
 agent `@agentclientprotocol/claude-agent-acp`, SBOM, provenance, cosign signature) → Trivy scan
 (CRITICAL/HIGH with a fix block the deploy) → deploy through the reusable workflow of
-`hammurapi-infra`. A manual run with a tag redeploys the signed image without a rebuild; with
+`hammurapi` (`.github/workflows/deploy-component.yml`). A manual run with a tag redeploys the signed image without a rebuild; with
 `run_id` and `callback_url` it follows the PLT.HMR-0002 deploy contract.
 
-Versions are pinned in `deploy/versions.env` (`INFRA_WORKFLOW_REF`, `CHART_VERSION`,
-`AGENT_VERSION`) and change by PR; after changing `INFRA_WORKFLOW_REF` run
+Versions are pinned in `deploy/versions.env` (`DEPLOY_WORKFLOW_REF`, `CHART_VERSION`,
+`AGENT_VERSION`) and change by PR; after changing `DEPLOY_WORKFLOW_REF` run
 `deploy/sync-ref.sh` (CI checks it). Setup: `hammurapi-infra/docs/hammurapi.md`.
 
 ## API

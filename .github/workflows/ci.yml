@@ -1,4 +1,4 @@
-# Проверки на каждый PR: линтер, тесты, синхронизация INFRA_WORKFLOW_REF, actionlint.
+# Проверки на каждый PR: линтер, тесты, синхронизация DEPLOY_WORKFLOW_REF, actionlint.
 name: ci
 on:
   pull_request:
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: INFRA_WORKFLOW_REF совпадает с uses в release.yml
+      - name: DEPLOY_WORKFLOW_REF совпадает с uses в release.yml
         run: bash deploy/sync-ref.sh --check
       - name: actionlint
         run: |
