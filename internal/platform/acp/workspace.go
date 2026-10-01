@@ -86,20 +86,40 @@ func (w *Workspace) Resolve(p string) (string, error) {
 		p = filepath.Join(root, p)
 	}
 	clean := filepath.Clean(p)
-	rel, err := filepath.Rel(root, clean)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if !inside(root, clean) {
 		return "", ErrOutsideWorkspace
 	}
-	// Symlinks must not lead outside either.
-	if real, err := filepath.EvalSymlinks(clean); err == nil {
-		if rr, err := filepath.EvalSymlinks(root); err == nil {
-			rel, err := filepath.Rel(rr, real)
-			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				return "", ErrOutsideWorkspace
-			}
-		}
+	// Symlinks must not lead outside either, including for a file that does not
+	// exist yet: the nearest existing ancestor is resolved and the rest appended.
+	rr, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	if !inside(rr, realPath(clean)) {
+		return "", ErrOutsideWorkspace
 	}
 	return clean, nil
+}
+
+func inside(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// realPath resolves symlinks in the longest existing prefix of p.
+func realPath(p string) string {
+	rest := ""
+	for cur := p; ; {
+		if real, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // Run starts the agent, opens a session in Root with the MCP servers and sends

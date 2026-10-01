@@ -20,8 +20,11 @@ func TestWorkspaceResolve(t *testing.T) {
 	}
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "link")); err == nil {
-		if _, err := w.Resolve("link/secret"); err == nil {
-			t.Error("symlink escape accepted")
+		// Neither path exists yet: the check must not depend on the target existing.
+		for _, bad := range []string{"link/secret", "link/new/deep/file"} {
+			if _, err := w.Resolve(bad); err == nil {
+				t.Errorf("symlink escape accepted: %s", bad)
+			}
 		}
 	}
 	if _, rerr := w.onRequest("fs/write_text_file", []byte(`{"path":"../evil.txt","content":"x"}`)); rerr == nil {
