@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/markdown"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/markdown"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // Feature identifies the feature whose documents are projected.

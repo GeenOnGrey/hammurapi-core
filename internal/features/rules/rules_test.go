@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	tu "github.com/GreenOnGrey/hammurapi-core/internal/testutil"
 )
 
 // ROLE-04 / ROLE-08: only admins of an area change its rules; a global admin only reads.

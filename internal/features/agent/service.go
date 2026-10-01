@@ -15,16 +15,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/agentrun"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/attachments"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/features"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/acp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/attachments"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/features"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // historyOnRestore is how many recent messages seed a session that could not be loaded.

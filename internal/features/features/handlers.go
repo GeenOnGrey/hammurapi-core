@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // Handlers serves /api/v1/features.

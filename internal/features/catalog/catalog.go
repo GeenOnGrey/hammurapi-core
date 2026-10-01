@@ -27,12 +27,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // Annotations.

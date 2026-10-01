@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
+	tu "github.com/GreenOnGrey/hammurapi-core/internal/testutil"
 )
 
 // These checks run before any database access, so the service has no repository.

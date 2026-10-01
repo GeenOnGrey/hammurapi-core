@@ -7,12 +7,12 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	emocks "github.com/GeenOnGrey/hammurapi-core/internal/platform/events/mocks"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
-	smocks "github.com/GeenOnGrey/hammurapi-core/internal/specdata/mocks"
-	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	emocks "github.com/GreenOnGrey/hammurapi-core/internal/platform/events/mocks"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
+	smocks "github.com/GreenOnGrey/hammurapi-core/internal/specdata/mocks"
+	tu "github.com/GreenOnGrey/hammurapi-core/internal/testutil"
 )
 
 type fixture struct {

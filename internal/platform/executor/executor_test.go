@@ -47,7 +47,9 @@ func TestK8sStartIdempotent(t *testing.T) {
 	defer srv.Close()
 	dir := t.TempDir()
 	tokenFile := filepath.Join(dir, "token")
-	os.WriteFile(tokenFile, []byte("sa-token\n"), 0o600)
+	if err := os.WriteFile(tokenFile, []byte("sa-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	k, _ := NewK8s(K8sConfig{Namespace: "ns", Image: "img", Timeout: time.Hour, APIServer: srv.URL, TokenFile: tokenFile})
 	k.http = srv.Client()
 	for i := 0; i < 2; i++ {

@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/features"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/gates"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/features"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/gates"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // DiscoveryInput is the structured Discovery document written by the agent.
@@ -44,7 +44,6 @@ type ToolDeps struct {
 }
 
 var (
-	chat      = []string{mcp.ModeGeneral, mcp.ModeSpec}
 	readers   = []string{mcp.ModeGeneral, mcp.ModeSpec, mcp.ModeDiscovery, mcp.ModeGenerate, mcp.ModeCheck, mcp.ModeTask}
 	research  = []string{mcp.ModeGeneral, mcp.ModeSpec, mcp.ModeDiscovery, mcp.ModeGenerate, mcp.ModeCheck}
 	codeRead  = []string{mcp.ModeDiscovery, mcp.ModeGenerate, mcp.ModeCheck}

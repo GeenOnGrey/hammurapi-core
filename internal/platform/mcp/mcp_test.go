@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
 )
 
 func call(t *testing.T, s *Server, token, method string, params any) (int, map[string]any) {

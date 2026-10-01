@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
 )
 
 type entry struct {

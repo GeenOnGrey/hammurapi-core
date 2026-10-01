@@ -1,4 +1,4 @@
-module github.com/GeenOnGrey/hammurapi-core
+module github.com/GreenOnGrey/hammurapi-core
 
 go 1.27
 

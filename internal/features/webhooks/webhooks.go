@@ -23,19 +23,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/trace"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/trace"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/gates"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/kafka"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/gates"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/kafka"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // Envelope is the raw webhook as published to Kafka.
@@ -176,13 +176,6 @@ func (p *Processor) Dispatch(ctx context.Context, ev *git.HookEvent) error {
 		return p.review(ctx, ev.Review)
 	}
 	return nil
-}
-
-func (p *Processor) fresh(ctx context.Context, eventID string) (bool, error) {
-	if eventID == "" {
-		return true, nil
-	}
-	return p.store.MarkWebhookProcessed(ctx, eventID)
 }
 
 func (p *Processor) catalogPush(ctx context.Context, push *git.PushEvent) error {

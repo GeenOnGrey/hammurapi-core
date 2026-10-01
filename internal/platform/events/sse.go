@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
 )
 
 // SSEHandler serves GET /api/v1/events: one stream carries every event type.

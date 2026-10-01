@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
 )
 
 const serviceCols = `s.id, s.key, s.name, s.system_id, d.key || '/' || sy.key, d.key, s.repo, s.owner_ref, s.autonomy, s.deploy_override,

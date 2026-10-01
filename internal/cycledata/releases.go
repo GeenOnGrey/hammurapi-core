@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // ─── Releases ────────────────────────────────────────────────────────

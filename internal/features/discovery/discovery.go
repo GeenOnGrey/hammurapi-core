@@ -18,16 +18,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/agent"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/agentrun"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // Kind is the workflow kind.

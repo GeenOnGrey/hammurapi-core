@@ -14,8 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/logging"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/logging"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
 )
 
 type statusWriter struct {

@@ -11,10 +11,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/logging"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/logging"
 )
 
 // Cookie names.
@@ -33,19 +33,34 @@ type PublicConfig struct {
 	Languages       []string `json:"languages"`
 	DefaultLanguage string   `json:"defaultLanguage"`
 	DefaultBranch   string   `json:"defaultBranch"`
+	// BootstrapAdminsConfigured tells deploy checks that the stand owner will
+	// become the first global administrator.
+	BootstrapAdminsConfigured bool `json:"bootstrapAdminsConfigured"`
 }
 
 // Handlers serves auth endpoints.
 type Handlers struct {
-	svc    *Service
-	cfg    PublicConfig
-	secure bool
+	svc          *Service
+	cfg          PublicConfig
+	secure       bool
+	webURL       string // where the browser returns after sign-in ("" — same origin)
+	cookieDomain string // Domain of the session and CSRF cookies ("" — host only)
 }
 
 // NewHandlers creates handlers; secure sets the Secure cookie attribute.
 func NewHandlers(svc *Service, cfg PublicConfig, secure bool) *Handlers {
 	return &Handlers{svc: svc, cfg: cfg, secure: secure}
 }
+
+// WithWeb sets the SPA URL for redirects after sign-in and the cookie domain
+// shared by the SPA and the API when they live on different subdomains.
+func (h *Handlers) WithWeb(webURL, cookieDomain string) *Handlers {
+	h.webURL = strings.TrimRight(webURL, "/")
+	h.cookieDomain = cookieDomain
+	return h
+}
+
+func (h *Handlers) web(path string) string { return h.webURL + path }
 
 // Public mounts unauthenticated routes.
 func (h *Handlers) Public(r chi.Router) {
@@ -71,29 +86,29 @@ func (h *Handlers) callback(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(stateCookie)
 	q := r.URL.Query()
 	if err != nil || q.Get("state") == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(q.Get("state"))) != 1 {
-		http.Redirect(w, r, "/login?error=state", http.StatusFound)
+		http.Redirect(w, r, h.web("/login?error=state"), http.StatusFound)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: stateCookie, Path: "/api/v1/auth", MaxAge: -1})
 	if q.Get("error") != "" {
-		http.Redirect(w, r, "/login?error=denied", http.StatusFound)
+		http.Redirect(w, r, h.web("/login?error=denied"), http.StatusFound)
 		return
 	}
 	sid, csrf, err := h.svc.Login(r.Context(), q.Get("code"))
 	if err != nil {
 		slog.ErrorContext(r.Context(), "login failed", "err", err)
-		http.Redirect(w, r, "/login?error=failed", http.StatusFound)
+		http.Redirect(w, r, h.web("/login?error=failed"), http.StatusFound)
 		return
 	}
 	h.setSessionCookies(w, sid, csrf)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.web("/"), http.StatusFound)
 }
 
 func (h *Handlers) setSessionCookies(w http.ResponseWriter, sid uuid.UUID, csrf string) {
 	maxAge := int(SessionTTL.Seconds())
-	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: sid.String(), Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: sid.String(), Path: "/", Domain: h.cookieDomain, HttpOnly: true,
 		Secure: h.secure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge})
-	http.SetCookie(w, &http.Cookie{Name: CSRFCookie, Value: csrf, Path: "/", HttpOnly: false,
+	http.SetCookie(w, &http.Cookie{Name: CSRFCookie, Value: csrf, Path: "/", Domain: h.cookieDomain, HttpOnly: false,
 		Secure: h.secure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge})
 }
 
@@ -171,8 +186,9 @@ func (h *Handlers) logout(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Path: "/", MaxAge: -1})
-	http.SetCookie(w, &http.Cookie{Name: CSRFCookie, Path: "/", MaxAge: -1})
+	// A cookie is removed only with the same Domain it was set with.
+	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Path: "/", Domain: h.cookieDomain, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: CSRFCookie, Path: "/", Domain: h.cookieDomain, MaxAge: -1})
 	httpx.NoContent(w)
 	return nil
 }

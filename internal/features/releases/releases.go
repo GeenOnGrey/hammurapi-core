@@ -18,17 +18,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/deploy"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/markdown"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/deploy"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/markdown"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // Create creates the release of a validated feature (R25) in the caller's
@@ -412,7 +412,7 @@ func (s *Service) MarkDeploy(ctx context.Context, p *domain.Principal, key, serv
 // MarkFlag records a manual flag state (R29): only production events count.
 func (s *Service) MarkFlag(ctx context.Context, p *domain.Principal, key, state string, at time.Time) error {
 	rel, f, _, err := s.action(ctx, p, key, false)
-	if err != nil && !(errors.Is(err, errFinished) && rel != nil) {
+	if err != nil && (!errors.Is(err, errFinished) || rel == nil) {
 		return err
 	}
 	if state != "on" && state != "off" {

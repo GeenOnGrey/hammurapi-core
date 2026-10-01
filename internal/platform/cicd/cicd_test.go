@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/signing"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/signing"
 )
 
 func TestRenderEscapes(t *testing.T) {

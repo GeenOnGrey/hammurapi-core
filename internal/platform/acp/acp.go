@@ -18,8 +18,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/telemetry"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/telemetry"
 )
 
 // ProtocolVersion is the ACP major version spoken by this client.

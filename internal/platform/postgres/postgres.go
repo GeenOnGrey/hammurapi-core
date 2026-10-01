@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/GeenOnGrey/hammurapi-core/migrations"
+	"github.com/GreenOnGrey/hammurapi-core/migrations"
 )
 
 // Querier is satisfied by both *pgxpool.Pool and pgx.Tx.

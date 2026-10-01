@@ -15,8 +15,8 @@ import (
 	kgo "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/telemetry"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/telemetry"
 )
 
 // Topics.

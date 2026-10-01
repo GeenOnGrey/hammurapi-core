@@ -10,10 +10,10 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
-	smocks "github.com/GeenOnGrey/hammurapi-core/internal/specdata/mocks"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
+	smocks "github.com/GreenOnGrey/hammurapi-core/internal/specdata/mocks"
 )
 
 // User builds a principal from grants:

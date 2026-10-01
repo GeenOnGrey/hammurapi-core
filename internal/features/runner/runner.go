@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/codegen"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/acp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
 )
 
 // Config is the runner process configuration (environment set by the executor).

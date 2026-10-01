@@ -24,7 +24,16 @@ type Config struct {
 	// WorkerMCPAddr is the worker's own MCP endpoint for Discovery, generation and checks.
 	WorkerMCPAddr string
 	PublicURL     string // external URL of the web app, used for OAuth redirects and cookies
-	// HooksURL is the base URL of /hooks/v1/* as reachable by CI/CD (deploy result callbacks); defaults to PublicURL.
+	// PublicWebURL and PublicAPIURL split the SPA and the API across domains
+	// (web.<domain>, api.<domain>); both default to PublicURL (one origin).
+	PublicWebURL string
+	PublicAPIURL string
+	// CORSAllowedOrigins may call the API with credentials (the SPA on another domain).
+	CORSAllowedOrigins []string
+	// CookieDomain is the Domain attribute of the session and CSRF cookies, so
+	// the SPA on web.<domain> can read the CSRF token set by api.<domain>.
+	CookieDomain string
+	// HooksURL is the base URL of /hooks/v1/* as reachable by CI/CD (deploy result callbacks); defaults to PublicAPIURL.
 	HooksURL string
 
 	// Git provider
@@ -226,7 +235,13 @@ func Load() (*Config, error) {
 		c.GitOAuthURL = c.GitBaseURL
 	}
 	c.InternalURL = strings.TrimRight(env("INTERNAL_URL", "http://"+localAddr(c.InternalAddr)), "/")
-	c.HooksURL = strings.TrimRight(env("HOOKS_URL", c.PublicURL), "/")
+	c.PublicWebURL = strings.TrimRight(env("PUBLIC_WEB_URL", c.PublicURL), "/")
+	c.PublicAPIURL = strings.TrimRight(env("PUBLIC_API_URL", c.PublicURL), "/")
+	for _, o := range splitList(env("CORS_ALLOWED_ORIGINS", ""), ",") {
+		c.CORSAllowedOrigins = append(c.CORSAllowedOrigins, strings.TrimRight(o, "/"))
+	}
+	c.CookieDomain = strings.TrimPrefix(env("COOKIE_DOMAIN", ""), ".")
+	c.HooksURL = strings.TrimRight(env("HOOKS_URL", c.PublicAPIURL), "/")
 	if c.RunnerExecutor != "k8s" && c.RunnerExecutor != "local" {
 		return nil, fmt.Errorf("RUNNER_EXECUTOR must be k8s or local, got %q", c.RunnerExecutor)
 	}

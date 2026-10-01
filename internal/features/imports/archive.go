@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
 )
 
 // Limits bound what an archive may contain.

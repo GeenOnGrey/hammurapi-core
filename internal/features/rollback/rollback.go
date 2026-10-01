@@ -16,14 +16,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/codegen"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/discovery"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/releases"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/discovery"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/releases"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // Steps: revert → revert_wait → merge → merge_wait → deploy → deploy_wait (per

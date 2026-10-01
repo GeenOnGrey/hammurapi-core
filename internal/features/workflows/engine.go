@@ -24,16 +24,15 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
 )
 
 // Terminal states: runs in these states are never processed again.
@@ -139,8 +138,6 @@ type Engine struct {
 	lease       time.Duration
 	owner       string
 	Now         func() time.Time
-
-	mu sync.Mutex
 }
 
 // Config configures the engine.

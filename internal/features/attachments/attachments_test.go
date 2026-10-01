@@ -3,7 +3,7 @@ package attachments
 import (
 	"testing"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/config"
+	"github.com/GreenOnGrey/hammurapi-core/internal/config"
 )
 
 func allowed() map[string]bool {

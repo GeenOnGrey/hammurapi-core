@@ -175,7 +175,9 @@ func uniqueSorted(ms [][]string, prefix string) []string {
 			out = append(out, id)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return len(out[i]) < len(out[j]) || (len(out[i]) == len(out[j]) && out[i] < out[j]) })
+	sort.Slice(out, func(i, j int) bool {
+		return len(out[i]) < len(out[j]) || (len(out[i]) == len(out[j]) && out[i] < out[j])
+	})
 	return out
 }
 

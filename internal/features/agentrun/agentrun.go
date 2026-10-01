@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/acp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
 )
 
 // Runner starts agent sessions.

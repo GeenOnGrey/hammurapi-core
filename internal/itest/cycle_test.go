@@ -16,22 +16,22 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/mock/gomock"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/cycledata"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/codegen"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/deploy"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/discovery"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/issues"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/overview"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/releases"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/rollback"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/validation"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	gmocks "github.com/GeenOnGrey/hammurapi-core/internal/platform/git/mocks"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
-	tu "github.com/GeenOnGrey/hammurapi-core/internal/testutil"
+	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/deploy"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/discovery"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/issues"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/overview"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/releases"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/rollback"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/validation"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	gmocks "github.com/GreenOnGrey/hammurapi-core/internal/platform/git/mocks"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
+	tu "github.com/GreenOnGrey/hammurapi-core/internal/testutil"
 )
 
 // ─── Workflow engine ─────────────────────────────────────────────────
@@ -143,7 +143,9 @@ func TestEngine(t *testing.T) {
 
 type failingTokens struct{}
 
-func (failingTokens) Token(context.Context, uuid.UUID) (string, error) { return "", errors.New("no token in tests") }
+func (failingTokens) Token(context.Context, uuid.UUID) (string, error) {
+	return "", errors.New("no token in tests")
+}
 
 // TestCycle: issue → Discovery → feature → validation → release (merge in the
 // plan order, deploy marks, confirmation) and a second release rolled back.
@@ -172,7 +174,9 @@ func TestCycle(t *testing.T) {
 	engine := workflows.New(pool, nopEvents{}, workflows.Config{MaxAttempts: 3, Lease: time.Minute})
 	engine.Register(discovery.Machine{}, validation.Machine{}, releases.Machine{}, rollback.Machine{},
 		codegen.TaskMachine{Limits: codegen.Limits{MaxParallel: 5, Timeout: time.Hour}})
-	nop := workflows.EffectHandler{Do: func(context.Context, workflows.RunRef, json.RawMessage) ([]workflows.NewEvent, error) { return nil, nil }}
+	nop := workflows.EffectHandler{Do: func(context.Context, workflows.RunRef, json.RawMessage) ([]workflows.NewEvent, error) {
+		return nil, nil
+	}}
 	engine.Handle(validation.EffectCheck, nop)
 	engine.Handle(deploy.Effect, nop)
 	engine.Handle(codegen.EffectStop, nop)

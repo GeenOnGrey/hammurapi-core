@@ -75,6 +75,25 @@ All settings are environment variables; see `internal/config/config.go` and
 reads `PUBLIC_URL` (external URL, used for the OAuth callback and `Secure` cookies), `HTTP_ADDR`
 (`:8080`), `SERVICE_ADDR` (`:9100`), `MCP_ADDR` (`127.0.0.1:8081`) and `S3_USE_SSL`.
 
+When the SPA and the API live on different subdomains (`web.<domain>`, `api.<domain>`,
+PLT.INFRA-0002), set `PUBLIC_WEB_URL` (where the browser returns after sign-in),
+`PUBLIC_API_URL` (OAuth callback, deploy callbacks), `CORS_ALLOWED_ORIGINS` (origins allowed to
+call the API with credentials) and `COOKIE_DOMAIN` (shared Domain of the session and CSRF
+cookies). All default to a single origin.
+
+## Release
+
+A tag `vX.Y.Z` runs `.github/workflows/release.yml`: lint (golangci-lint) ∥ tests → image
+`ghcr.io/greenongrey/hammurapi-core` (target `release` of the `Dockerfile`: Hammurapi + the ACP
+agent `@agentclientprotocol/claude-agent-acp`, SBOM, provenance, cosign signature) → Trivy scan
+(CRITICAL/HIGH with a fix block the deploy) → deploy through the reusable workflow of
+`hammurapi-infra`. A manual run with a tag redeploys the signed image without a rebuild; with
+`run_id` and `callback_url` it follows the PLT.HMR-0002 deploy contract.
+
+Versions are pinned in `deploy/versions.env` (`INFRA_WORKFLOW_REF`, `CHART_VERSION`,
+`AGENT_VERSION`) and change by PR; after changing `INFRA_WORKFLOW_REF` run
+`deploy/sync-ref.sh` (CI checks it). Setup: `hammurapi-infra/docs/hammurapi.md`.
+
 ## API
 
 REST/JSON under `/api/v1` (session + `X-CSRF-Token`), `/admin/api/v1`, `/hooks/v1/git`, and

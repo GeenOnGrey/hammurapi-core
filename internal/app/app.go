@@ -17,56 +17,56 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/apperr"
-	"github.com/GeenOnGrey/hammurapi-core/internal/config"
-	"github.com/GeenOnGrey/hammurapi-core/internal/domain"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/admin"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/agent"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/agentrun"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/approvals"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/attachments"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/auth"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/catalog"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/ciresults"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/codegen"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/deploy"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/discovery"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/domains"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/features"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/feedback"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/flags"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/gategen"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/gates"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/imports"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/issues"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/metricsources"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/overview"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/profile"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/releases"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/rollback"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/rules"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/runner"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/services"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/validation"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/voice"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/webhooks"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/workflows"
-	"github.com/GeenOnGrey/hammurapi-core/internal/jobs/cleaner"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/acp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/cicd"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/crypto"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/events"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/executor"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/httpx"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/kafka"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/metrics"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/postgres"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/signing"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/storage"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/whisper"
-	"github.com/GeenOnGrey/hammurapi-core/internal/specdata"
+	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
+	"github.com/GreenOnGrey/hammurapi-core/internal/config"
+	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/admin"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/approvals"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/attachments"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/auth"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/catalog"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/ciresults"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/deploy"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/discovery"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/domains"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/features"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/feedback"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/flags"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/gategen"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/gates"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/imports"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/issues"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/metricsources"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/overview"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/profile"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/releases"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/rollback"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/rules"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/runner"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/services"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/validation"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/voice"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/webhooks"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/jobs/cleaner"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/cicd"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/crypto"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/executor"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/kafka"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/metrics"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/postgres"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/signing"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/storage"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/whisper"
+	"github.com/GreenOnGrey/hammurapi-core/internal/specdata"
 )
 
 // core holds dependencies shared by all modes.
@@ -114,7 +114,7 @@ func newCore(ctx context.Context, cfg *config.Config) (*core, error) {
 	authRepo := auth.NewRepository(pool)
 	return &core{
 		cfg: cfg, pool: pool, provider: provider, authRepo: authRepo,
-		authSvc: auth.NewService(authRepo, provider, box, cfg.PublicURL, cfg.BootstrapAdmins, cfg.DefaultLanguage),
+		authSvc: auth.NewService(authRepo, provider, box, cfg.PublicAPIURL, cfg.BootstrapAdmins, cfg.DefaultLanguage),
 		store:   specdata.NewPG(pool), s3: s3, events: events.NewPGPublisher(pool), secrets: signing.NewSecrets(box),
 	}, nil
 }
@@ -269,10 +269,12 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	authH := auth.NewHandlers(c.authSvc, auth.PublicConfig{
 		Provider: cfg.GitProvider, UploadMaxBytes: cfg.UploadMaxBytes, UploadTypes: cfg.UploadAllowedTypes,
 		ImportMaxBytes: cfg.ImportMaxBytes, Languages: domain.Languages, DefaultLanguage: cfg.DefaultLanguage, DefaultBranch: branch,
-	}, strings.HasPrefix(cfg.PublicURL, "https://"))
+		BootstrapAdminsConfigured: len(cfg.BootstrapAdmins) > 0,
+	}, strings.HasPrefix(cfg.PublicAPIURL, "https://")).WithWeb(webRedirectBase(cfg), cfg.CookieDomain)
 
 	r := chi.NewRouter()
 	r.Use(httpx.Observe)
+	r.Use(httpx.CORS(cfg.CORSAllowedOrigins))
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authH.Authenticate)
 		authH.Public(r)
@@ -455,4 +457,13 @@ func RunCleaner(ctx context.Context, cfg *config.Config) error {
 // RunMigrate applies database migrations.
 func RunMigrate(ctx context.Context, cfg *config.Config) error {
 	return postgres.Migrate(ctx, cfg.DatabaseURL)
+}
+
+// webRedirectBase is where the browser returns after sign-in: the SPA's own
+// origin when it is served separately from the API, otherwise a relative path.
+func webRedirectBase(cfg *config.Config) string {
+	if cfg.PublicWebURL != cfg.PublicAPIURL {
+		return cfg.PublicWebURL
+	}
+	return ""
 }

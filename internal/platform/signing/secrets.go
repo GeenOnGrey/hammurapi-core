@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/crypto"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/crypto"
 )
 
 // Secrets resolves secret references stored in the database. The database never

@@ -14,13 +14,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/GeenOnGrey/hammurapi-core/internal/app"
-	"github.com/GeenOnGrey/hammurapi-core/internal/config"
-	"github.com/GeenOnGrey/hammurapi-core/internal/features/runner"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/git"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/logging"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/mcp"
-	"github.com/GeenOnGrey/hammurapi-core/internal/platform/telemetry"
+	"github.com/GreenOnGrey/hammurapi-core/internal/app"
+	"github.com/GreenOnGrey/hammurapi-core/internal/config"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/runner"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/logging"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/telemetry"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
