@@ -15,7 +15,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 # Release image (docker build --target release): Hammurapi + the ACP agent in one
 # image — the instance image used by api, worker, runner, cleaner and migrate
 # (PLT.INFRA-0002 R4). The agent version comes from deploy/versions.env
-# (AGENT_VERSION) and changes only by PR.
+# (AGENT_VERSION) and changes only by PR. npm, corepack and yarn are removed after
+# the install: nothing uses them at runtime, and their bundled dependencies
+# (tar, undici, brace-expansion, ip-address…) are what the image scan flags.
 FROM node:24-trixie-slim AS release
 ARG VERSION=dev
 ARG AGENT_VERSION
@@ -23,7 +25,10 @@ ARG AGENT_PACKAGE=@agentclientprotocol/claude-agent-acp
 RUN test -n "$AGENT_VERSION" \
  && apt-get update && apt-get -y upgrade && apt-get install -y --no-install-recommends ca-certificates \
  && npm install -g --no-audit --no-fund "${AGENT_PACKAGE}@${AGENT_VERSION}" \
- && npm cache clean --force && rm -rf /var/lib/apt/lists/* \
+ && npm cache clean --force && rm -rf /var/lib/apt/lists/* /root/.npm \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+ && command -v claude-agent-acp && ! command -v npm \
  && mkdir -p /var/lib/hammurapi/runs && chown 1000:1000 /var/lib/hammurapi/runs
 COPY --from=build /out/hammurapi /usr/local/bin/hammurapi
 LABEL org.opencontainers.image.title="hammurapi-core" \
