@@ -4,12 +4,14 @@ Backend of **Hammurapi** — a platform for writing product specifications throu
 sequence of quality gates (`product → design → arch → tech → qa`), with an AI agent as a
 partner and git as the source of truth for content.
 
-One Go binary, four modes:
+One Go binary, several modes:
 
 | Mode | Purpose | Kubernetes |
 | --- | --- | --- |
-| `api` | User/admin HTTP API, SSE, webhooks, ACP agent pool, internal MCP endpoint | Deployment |
-| `worker` | Kafka consumer: push webhooks → gate projection; archive imports | Deployment |
+| `api` | User/admin HTTP API, SSE, webhooks, chat with the agent, internal MCP endpoint | Deployment |
+| `worker` | Kafka consumer, workflows, agent scenarios through the operator, MCP of task sessions (`:8083`) | Deployment |
+| `agent` | Agent operator: a Pi process (`pi --mode rpc`) per chat or task session (`:8090`) | Deployment |
+| `runner` | One code task: checkout, workspace server for Pi's tools (`:8095`), commit and PR | Job |
 | `cleaner` | Expired attachments, sessions, locks, unconfirmed imports, pending branch deletions | CronJob |
 | `migrate` | goose migrations (embedded) | Job / Helm hook |
 
@@ -20,13 +22,16 @@ Deployment (docker-compose, Helm, installer) and documentation live in the
 
 ```text
 cmd/hammurapi/        entry point: mode selection and wiring
-cmd/fakeagent/        scripted ACP agent for tests and smoke runs (not for production)
+cmd/fakellm/          scripted OpenAI-compatible LLM for the demo and smoke runs (not for production)
+pkg/pirpc/            client of Pi's RPC mode (JSONL over stdin/stdout)
+pi-extensions/        hammurapi-workspace: Pi's file and shell tools over the runner workspace server
 migrations/           goose SQL, embedded into the binary
 internal/app/         dependency assembly and routing per mode
 internal/features/    vertical slices: auth, profile, domains, features, gates, approvals,
                       handoff, rules, agent, voice, attachments, imports, admin, feedback, webhooks
 internal/specdata/    shared projection of features, gates, history and locks
-internal/platform/    adapters: postgres, kafka, git (GitHub + GitLab), acp, mcp, storage (S3),
+internal/platform/    adapters: postgres, kafka, git (GitHub + GitLab), agent (operator, Pi adapter,
+                      client, LLM error classes, fakellm), mcp, storage (S3),
                       whisper, events (NOTIFY → SSE), crypto, logging, telemetry, metrics, httpx
 internal/jobs/cleaner the cleaner mode
 ```
@@ -44,18 +49,20 @@ internal/jobs/cleaner the cleaner mode
   latest commit of the gate folder and refuses if the projection has not seen it yet.
 - **Events** are published with `pg_notify`; every `api` pod listens and fans them out over one SSE
   stream per browser. Agent tokens go straight to the local SSE stream (sticky sessions).
-- **Agent:** the ACP agent runs as a subprocess of `api` (JSON-RPC over stdio), in a pool of at most
-  `ACP_MAX_PROCESSES`, one session per user. Hammurapi tools are exposed to it as an MCP server on
-  `127.0.0.1:8081/mcp` (or through `hammurapi mcp-proxy` for agents without HTTP MCP) with a token
-  scoped to the chat mode, the feature and the user's editor areas. There is no delete tool.
+- **Agent (PLT.HMR-0004):** Pi runs in the agent operator (mode `agent`), one process per session.
+  `api` and `worker` resolve the scenario's LLM connection, model, skills and MCP servers
+  (`internal/features/agentcfg`, Admin → Agent) and open sessions over HTTP with
+  `AGENT_SERVICE_TOKEN`; runner tasks open their own with a task token. Hammurapi tools are an MCP
+  server with a grant per session (chat, scenario, task). LLM errors are classified and shown in
+  plain words; usage and cost are recorded per scenario. There is no delete tool.
 
 ## Development
 
 Requires Go 1.27. Docker is needed only for integration tests and images.
 
 ```sh
-make build            # bin/hammurapi, bin/hammurapi-fakeagent
-make test             # unit tests (mockgen mocks, fake ACP agent over stdio, httptest providers)
+make build            # bin/hammurapi, bin/fakellm
+make test             # unit tests (mockgen mocks, fake Pi over RPC, httptest providers)
 make test-integration # + Postgres via dockertest v4
 make generate         # regenerate mocks (go tool mockgen)
 make image            # docker image hammurapi:<version>
@@ -84,14 +91,15 @@ cookies). All default to a single origin.
 ## Release
 
 A tag `vX.Y.Z` runs `.github/workflows/release.yml`: lint (golangci-lint) ∥ tests → image
-`ghcr.io/greenongrey/hammurapi-core` (target `release` of the `Dockerfile`: Hammurapi + the ACP
-agent `@agentclientprotocol/claude-agent-acp`, SBOM, provenance, cosign signature) → Trivy scan
+`ghcr.io/greenongrey/hammurapi-core` (target `release` of the `Dockerfile`: Hammurapi + Pi
+`@earendil-works/pi-coding-agent` + the `hammurapi-workspace` extension, SBOM, provenance, cosign
+signature) → Trivy scan
 (CRITICAL/HIGH with a fix block the deploy) → deploy through the reusable workflow of
 `hammurapi` (`.github/workflows/deploy-component.yml`). A manual run with a tag redeploys the signed image without a rebuild; with
 `run_id` and `callback_url` it follows the PLT.HMR-0002 deploy contract.
 
 Versions are pinned in `deploy/versions.env` (`DEPLOY_WORKFLOW_REF`, `CHART_VERSION`,
-`AGENT_VERSION`) and change by PR; after changing `DEPLOY_WORKFLOW_REF` run
+`PI_VERSION`) and change by PR; after changing `DEPLOY_WORKFLOW_REF` run
 `deploy/sync-ref.sh` (CI checks it). Setup: `hammurapi-infra/docs/hammurapi.md`.
 
 ## API

@@ -20,8 +20,8 @@ type K8sConfig struct {
 	Image          string
 	Timeout        time.Duration
 	CPU, Memory    string   // limits, e.g. "2", "4Gi"
-	Env            []string // agent settings only (ACP_*), KEY=VALUE
-	EnvFromSecret  string   // Secret with agent credentials (e.g. ANTHROPIC_API_KEY), optional
+	Env            []string // extra non-secret settings, KEY=VALUE (no LLM keys: PLT.HMR-0004)
+	WorkspacePort  int      // the runner's workspace server, reached by the agent operator
 	APIServer      string   // defaults to https://kubernetes.default.svc
 	TokenFile      string   // defaults to the in-cluster service account token
 	CAFile         string
@@ -74,6 +74,13 @@ func JobName(taskID string) string {
 	return "hammurapi-task-" + id
 }
 
+func (k *K8s) workspacePort() int {
+	if k.cfg.WorkspacePort > 0 {
+		return k.cfg.WorkspacePort
+	}
+	return 8095
+}
+
 // Manifest builds the Job object (exported for tests and Helm docs).
 func (k *K8s) Manifest(t Task) map[string]any {
 	env := []map[string]any{
@@ -83,6 +90,9 @@ func (k *K8s) Manifest(t Task) map[string]any {
 		{"name": "HAMMURAPI_WORKDIR", "value": "/work"},
 		{"name": "TRACEPARENT", "value": t.TraceParent},
 		{"name": "HOME", "value": "/work"},
+		// The agent operator reaches the workspace server on the pod IP (PLT.HMR-0004 arch §4.2).
+		{"name": "HAMMURAPI_WORKSPACE_HOST", "valueFrom": map[string]any{"fieldRef": map[string]string{"fieldPath": "status.podIP"}}},
+		{"name": "HAMMURAPI_WORKSPACE_ADDR", "value": fmt.Sprintf(":%d", k.workspacePort())},
 	}
 	for _, kv := range k.cfg.Env {
 		if n, v, ok := strings.Cut(kv, "="); ok {
@@ -94,6 +104,7 @@ func (k *K8s) Manifest(t Task) map[string]any {
 		"args":       []string{"runner", "--task", t.ID},
 		"env":        env,
 		"workingDir": "/work",
+		"ports":      []map[string]any{{"name": "workspace", "containerPort": k.workspacePort()}},
 		"resources": map[string]any{
 			"limits":   map[string]string{"cpu": k.cfg.CPU, "memory": k.cfg.Memory},
 			"requests": map[string]string{"cpu": "250m", "memory": "512Mi"},
@@ -103,9 +114,6 @@ func (k *K8s) Manifest(t Task) map[string]any {
 			"capabilities": map[string]any{"drop": []string{"ALL"}},
 		},
 		"volumeMounts": []map[string]any{{"name": "work", "mountPath": "/work"}, {"name": "tmp", "mountPath": "/tmp"}},
-	}
-	if k.cfg.EnvFromSecret != "" {
-		container["envFrom"] = []map[string]any{{"secretRef": map[string]any{"name": k.cfg.EnvFromSecret}}}
 	}
 	pod := map[string]any{
 		"restartPolicy":                "Never",

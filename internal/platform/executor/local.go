@@ -17,9 +17,12 @@ type Local struct {
 	Binary  string // path to the hammurapi binary; defaults to os.Executable()
 	WorkDir string
 	Timeout time.Duration
-	// Env is passed to the runner in addition to the task variables: only
-	// agent settings (ACP_*), never instance secrets.
+	// Env is passed to the runner in addition to the task variables: never
+	// instance secrets (the runner has no LLM keys either, PLT.HMR-0004).
 	Env []string
+	// WorkspaceHost is how the agent operator reaches this process's
+	// workspace servers (each task listens on a free port).
+	WorkspaceHost string
 
 	mu    sync.Mutex
 	procs map[string]*localProc
@@ -59,7 +62,8 @@ func (l *Local) Start(_ context.Context, t Task) (string, error) {
 	cmd.Env = append(minimalEnv(), l.Env...)
 	cmd.Env = append(cmd.Env,
 		"HAMMURAPI_TASK_ID="+t.ID, "HAMMURAPI_TASK_TOKEN="+t.Token,
-		"HAMMURAPI_INTERNAL_URL="+t.InternalURL, "HAMMURAPI_WORKDIR="+dir, "TRACEPARENT="+t.TraceParent)
+		"HAMMURAPI_INTERNAL_URL="+t.InternalURL, "HAMMURAPI_WORKDIR="+dir, "TRACEPARENT="+t.TraceParent,
+		"HAMMURAPI_WORKSPACE_ADDR=:0", "HAMMURAPI_WORKSPACE_HOST="+l.WorkspaceHost)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		cancel()

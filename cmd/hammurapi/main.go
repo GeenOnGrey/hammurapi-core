@@ -1,7 +1,6 @@
 // Command hammurapi is the single Hammurapi binary. The first argument selects
-// the mode: api, worker, cleaner, migrate or runner (one agent task; started by
-// the worker's executor). mcp-proxy is internal: it bridges stdio MCP to an
-// HTTP MCP endpoint for agents without HTTP MCP support.
+// the mode: api, worker, agent (the agent operator, PLT.HMR-0004), cleaner,
+// migrate or runner (one agent task; started by the worker's executor).
 package main
 
 import (
@@ -11,15 +10,18 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/GreenOnGrey/hammurapi-core/internal/app"
 	"github.com/GreenOnGrey/hammurapi-core/internal/config"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/runner"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent/operator"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent/pi"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/logging"
-	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/telemetry"
 )
 
@@ -29,8 +31,9 @@ var version = "dev"
 const usage = `usage: hammurapi <mode>
 
 modes:
-  api       HTTP API, SSE, webhooks, the chat agent and the internal API (:8081)
+  api       HTTP API, SSE, webhooks, the chat and the internal API (:8081)
   worker    webhook events, imports, workflows (state machines) and runner tasks
+  agent     the agent operator: Pi sessions behind the internal API (:8090)
   runner    one agent task: hammurapi runner --task <id>
   cleaner   one maintenance pass (run as a CronJob)
   migrate   apply database migrations
@@ -49,8 +52,8 @@ func main() {
 	case "version":
 		fmt.Println(version)
 		return
-	case "mcp-proxy":
-		if err := mcp.RunStdioProxy(ctx, os.Getenv("HAMMURAPI_MCP_URL"), os.Getenv("HAMMURAPI_MCP_TOKEN")); err != nil {
+	case "agent":
+		if err := runOperator(ctx); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -105,8 +108,8 @@ func runTask(ctx context.Context, args []string) error {
 	slog.SetDefault(logging.New(os.Stdout, envOr("LOG_LEVEL", "info")).With("mode", "runner", "task", *task, "version", version))
 	cfg := runner.Config{
 		TaskID: *task, Token: os.Getenv("HAMMURAPI_TASK_TOKEN"), InternalURL: os.Getenv("HAMMURAPI_INTERNAL_URL"),
-		WorkDir: envOr("HAMMURAPI_WORKDIR", "."), ACPCommand: os.Getenv("ACP_AGENT_COMMAND"),
-		ACPArgs: strings.Fields(os.Getenv("ACP_AGENT_ARGS")), ACPEnv: splitEnv(os.Getenv("ACP_AGENT_ENV")),
+		WorkDir:       envOr("HAMMURAPI_WORKDIR", "."),
+		WorkspaceAddr: envOr("HAMMURAPI_WORKSPACE_ADDR", ":8095"), WorkspaceHost: os.Getenv("HAMMURAPI_WORKSPACE_HOST"),
 		NewProvider: func(d *runner.Description) git.Provider {
 			if d.Provider == "gitlab" {
 				return git.NewGitLab(d.GitBaseURL, d.GitBaseURL, d.Repo, "", "")
@@ -127,12 +130,36 @@ func envOr(k, def string) string {
 	return def
 }
 
-func splitEnv(s string) []string {
-	var out []string
-	for _, x := range strings.Split(s, ";") {
-		if x = strings.TrimSpace(x); x != "" {
-			out = append(out, x)
-		}
+// runOperator runs the agent operator (PLT.HMR-0004 arch §3). Its
+// configuration comes from its own environment only: the pod has no database,
+// Kafka, object storage or Hammurapi secrets.
+func runOperator(ctx context.Context) error {
+	slog.SetDefault(logging.New(os.Stdout, envOr("LOG_LEVEL", "info")).With("mode", "agent", "version", version))
+	maxS, err := strconv.Atoi(envOr("AGENT_MAX_SESSIONS", "20"))
+	if err != nil {
+		return fmt.Errorf("AGENT_MAX_SESSIONS: %w", err)
 	}
-	return out
+	maxT, err := strconv.Atoi(envOr("AGENT_MAX_TASK_SESSIONS", "4"))
+	if err != nil {
+		return fmt.Errorf("AGENT_MAX_TASK_SESSIONS: %w", err)
+	}
+	idle, err := time.ParseDuration(envOr("AGENT_IDLE_TIMEOUT", "15m"))
+	if err != nil {
+		return fmt.Errorf("AGENT_IDLE_TIMEOUT: %w", err)
+	}
+	op, err := operator.New(operator.Config{
+		Runtime: pi.Runtime{Command: strings.Fields(envOr("PI_BINARY", "/usr/local/bin/pi")), Options: pi.Options{
+			ExtensionDir: envOr("PI_EXTENSION_DIR", "/opt/hammurapi/pi-extensions/hammurapi-workspace"),
+			Path:         envOr("PATH", "/usr/local/bin:/usr/bin:/bin"), Lang: os.Getenv("LANG"),
+			// Proxy settings and the like for the Pi processes, never secrets.
+			ExtraEnv: strings.Fields(os.Getenv("PI_EXTRA_ENV")),
+		}},
+		WorkDir: envOr("AGENT_WORKDIR", "/work"), ServiceToken: os.Getenv("AGENT_SERVICE_TOKEN"),
+		MaxSessions: maxS, MaxTaskSessions: maxT, IdleTimeout: idle,
+	})
+	if err != nil {
+		return err
+	}
+	return app.RunOperator(ctx, op, envOr("AGENT_LISTEN_ADDR", ":8090"), envOr("SERVICE_ADDR", ":9100"),
+		strings.Fields(envOr("PI_BINARY", "/usr/local/bin/pi")))
 }

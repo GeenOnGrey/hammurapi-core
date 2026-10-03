@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/admin"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentcfg"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/approvals"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/attachments"
@@ -52,7 +55,8 @@ import (
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/webhooks"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
 	"github.com/GreenOnGrey/hammurapi-core/internal/jobs/cleaner"
-	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	agentapi "github.com/GreenOnGrey/hammurapi-core/internal/platform/agent"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent/operator"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/cicd"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/crypto"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
@@ -80,6 +84,7 @@ type core struct {
 	s3       storage.Storage
 	events   *events.PGPublisher
 	secrets  *signing.Secrets
+	box      *crypto.Box
 }
 
 // NewProvider builds the git provider with the bot identity (GitHub App or GitLab bot token).
@@ -115,7 +120,7 @@ func newCore(ctx context.Context, cfg *config.Config) (*core, error) {
 	return &core{
 		cfg: cfg, pool: pool, provider: provider, authRepo: authRepo,
 		authSvc: auth.NewService(authRepo, provider, box, cfg.PublicAPIURL, cfg.BootstrapAdmins, cfg.DefaultLanguage),
-		store:   specdata.NewPG(pool), s3: s3, events: events.NewPGPublisher(pool), secrets: signing.NewSecrets(box),
+		store:   specdata.NewPG(pool), s3: s3, events: events.NewPGPublisher(pool), secrets: signing.NewSecrets(box), box: box,
 	}, nil
 }
 
@@ -251,19 +256,30 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	deployAdmin := &deploy.Admin{Pool: c.pool, Secrets: c.secrets, Effects: deployEffects}
 	flagHook := &flags.Hook{Pool: c.pool, Secrets: c.secrets, Events: c.events}
 
+	// The agent operator (PLT.HMR-0004): the chat and the runner API open Pi
+	// sessions there; the Agent section configures them.
+	operatorClient := &agentapi.Client{BaseURL: cfg.AgentAddr, Token: cfg.AgentServiceToken}
+	agentCfg := agentcfg.NewService(c.pool, c.box, operatorClient, c.events, c.s3, c.provider, tokens, branch)
+	if err := agentCfg.Bootstrap(ctx, cfg.BootstrapDeepSeekKey, cfg.BootstrapDeepSeekURL); err != nil {
+		slog.Error("agent bootstrap failed", "err", err)
+	}
+	overviewSvc.AgentFocus = func(ctx context.Context) ([]overview.Item, error) {
+		items, err := agentCfg.Focus(ctx)
+		out := make([]overview.Item, 0, len(items))
+		for _, it := range items {
+			out = append(out, overview.Item{Kind: it.Kind, Key: it.Key, Title: it.Title, Action: it.Action, WaitingSince: it.WaitingSince, Hint: it.Hint})
+		}
+		return out, err
+	}
 	mcpServer := mcp.NewServer()
-	var chatSvc *agent.Service
-	agentPool := acp.NewPool(acp.Config{
-		Command: cfg.ACPCommand, Args: cfg.ACPArgs, Env: cfg.ACPEnv, MaxProcs: cfg.ACPMaxProcs, IdleTimeout: cfg.ACPIdleTimeout,
-		OnSessionClosed: func(u uuid.UUID) { chatSvc.OnSessionClosed(u) },
-	})
-	defer agentPool.Close()
-	chatSvc = agent.NewService(agent.NewRepository(c.pool), c.store, agentPool, mcpServer, cfg.InternalURL+"/mcp", hub, attSvc, loadPrincipal)
+	chatSvc := agent.NewService(agent.NewRepository(c.pool), c.store, operatorClient, agentCfg, mcpServer, cfg.InternalURL+"/mcp", hub, attSvc, c.s3, loadPrincipal)
+	chatSvc.IdleTimeout = cfg.AgentIdleTimeout
 	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
 	profileSvc.OnAgentChanged = chatSvc.ResetPersona
 
 	internal := &runner.Internal{Pool: c.pool, Store: c.store, Git: c.provider, Events: c.events, MCP: mcpServer, GitBaseURL: cfg.GitBaseURL,
-		PublicURL: cfg.InternalURL, Timeout: cfg.RunnerTimeout, TokenLimit: cfg.RunnerTokenLimit}
+		PublicURL: cfg.InternalURL, Timeout: cfg.RunnerTimeout, TokenLimit: cfg.RunnerTokenLimit,
+		Operator: operatorClient, Config: agentCfg, AgentURL: cfg.AgentRunnerURL}
 	mcpServer.Resolve = internal.ResolveMCP
 
 	authH := auth.NewHandlers(c.authSvc, auth.PublicConfig{
@@ -311,6 +327,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 		sl.metrics.AdminRoutes(r)
 		deployAdmin.Routes(r)
 		flagHook.AdminRoutes(r)
+		agentCfg.Routes(r) // global administrators only
 	})
 	r.Method(http.MethodPost, "/hooks/v1/git", webhooks.NewReceiver(c.provider, cfg.WebhookSecret, producer))
 	r.Method(http.MethodPost, "/hooks/v1/ci-results", &ciresults.Handler{Pool: c.pool, Secrets: cfg.CIResultsSecret, Events: c.events})
@@ -330,6 +347,26 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 
 	g, gctx := errgroup.WithContext(ctx)
 	serve(gctx, g, api, internalHTTP, svc)
+	g.Go(func() error { chatSvc.Run(gctx); return nil })
+	return g.Wait()
+}
+
+// RunOperator serves the agent operator (PLT.HMR-0004 arch §3): the internal
+// API on listenAddr and health and metrics on serviceAddr.
+func RunOperator(ctx context.Context, op *operator.Operator, listenAddr, serviceAddr string, piCommand []string) error {
+	ready := func(context.Context) error {
+		if len(piCommand) == 0 {
+			return errors.New("PI_BINARY is empty")
+		}
+		if _, err := exec.LookPath(piCommand[0]); err != nil {
+			return fmt.Errorf("pi: %w", err)
+		}
+		return nil
+	}
+	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(op.Handler(), "agent"), ReadHeaderTimeout: 15 * time.Second}
+	g, gctx := errgroup.WithContext(ctx)
+	serve(gctx, g, srv, serviceServer(serviceAddr, ready))
+	g.Go(func() error { op.Run(gctx); return nil })
 	return g.Wait()
 }
 
@@ -347,13 +384,15 @@ func requireAnyAdmin(next http.Handler) http.Handler {
 // NewExecutor builds the runner executor.
 func NewExecutor(cfg *config.Config) (executor.Executor, error) {
 	if cfg.RunnerExecutor == "local" {
-		env := []string{"ACP_AGENT_COMMAND=" + cfg.ACPCommand, "ACP_AGENT_ARGS=" + strings.Join(cfg.ACPArgs, " ")}
-		env = append(env, cfg.ACPEnv...)
-		return executor.NewLocal(cfg.RunnerWorkdir, cfg.RunnerTimeout+5*time.Minute, env), nil
+		l := executor.NewLocal(cfg.RunnerWorkdir, cfg.RunnerTimeout+5*time.Minute, nil)
+		// The operator reaches the workspace servers of local tasks at the worker's host name.
+		if l.WorkspaceHost = os.Getenv("RUNNER_WORKSPACE_HOST"); l.WorkspaceHost == "" {
+			l.WorkspaceHost, _ = os.Hostname()
+		}
+		return l, nil
 	}
 	return executor.NewK8s(executor.K8sConfig{Namespace: cfg.RunnerNamespace, Image: cfg.RunnerImage, Timeout: cfg.RunnerTimeout,
-		CPU: cfg.RunnerCPU, Memory: cfg.RunnerMemory, EnvFromSecret: cfg.RunnerAgentSecret,
-		Env: []string{"ACP_AGENT_COMMAND=" + cfg.ACPCommand, "ACP_AGENT_ARGS=" + strings.Join(cfg.ACPArgs, " ")}})
+		CPU: cfg.RunnerCPU, Memory: cfg.RunnerMemory, WorkspacePort: cfg.RunnerWorkspacePort})
 }
 
 // RunWorker consumes webhook events and import jobs, runs the workflow engine
@@ -379,12 +418,14 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	})
 	proc := webhooks.NewProcessor(c.store, c.provider, c.events, sl.catalog, sl.codegen, cfg.BotLogin)
 
-	// Agent sessions of the worker (Discovery, generation, checks) with their own MCP endpoint.
+	// Agent sessions of the worker (Analysis, generation, checks) run in the
+	// agent operator and reach the worker's own MCP endpoint (result sinks).
+	operatorClient := &agentapi.Client{BaseURL: cfg.AgentAddr, Token: cfg.AgentServiceToken}
+	agentCfg := agentcfg.NewService(c.pool, c.box, operatorClient, c.events, c.s3, c.provider, tokens, cfg.GitDefaultBranch)
+	proc.Skills = agentCfg // pushes to /agent/ rebuild the skills snapshot
 	mcpServer := mcp.NewServer()
 	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
-	agentPool := acp.NewPool(acp.Config{Command: cfg.ACPCommand, Args: cfg.ACPArgs, Env: cfg.ACPEnv, MaxProcs: cfg.ACPMaxProcs, IdleTimeout: cfg.ACPIdleTimeout})
-	defer agentPool.Close()
-	agents := &agentrun.Runner{Agent: agentPool, MCP: mcpServer, URL: "http://" + cfg.WorkerMCPAddr + "/mcp"}
+	agents := &agentrun.Runner{Operator: operatorClient, Config: agentCfg, MCP: mcpServer, URL: cfg.WorkerMCPURL + "/mcp"}
 
 	exec, err := NewExecutor(cfg)
 	if err != nil {

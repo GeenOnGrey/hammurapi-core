@@ -23,12 +23,14 @@ import (
 	"github.com/GreenOnGrey/hammurapi-core/internal/apperr"
 	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
 	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentcfg"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/deploy"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/features"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/releases"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
@@ -710,9 +712,9 @@ func (e *Effects) Check(ctx context.Context, _ workflows.RunRef, payload json.Ra
 			fmt.Fprintf(&b, "--- %s\n%s\n", cf.Path, file.Content)
 		}
 	}
-	out, err := e.Runner.Once(ctx, mcp.Grant{Mode: mcp.ModeCheck, ContextType: "feature", ContextKey: f.UniqueID, Feature: f.UniqueID, Subject: f.ID},
-		map[string]any{"task": "check", "feature": f.UniqueID}, b.String())
-	_ = cd.AddUsage(ctx, cycledata.Usage{Context: "check", FeatureID: &f.ID, TokensIn: out.TokensIn, TokensOut: out.TokensOut})
+	out, err := e.Runner.Once(ctx, agent.ScenarioConformanceCheck, mcp.Grant{Mode: mcp.ModeCheck, ContextType: "feature", ContextKey: f.UniqueID, Feature: f.UniqueID, Subject: f.ID},
+		agentrun.System, b.String())
+	e.Runner.Record(ctx, agent.ScenarioConformanceCheck, out, agentcfg.UsageRecord{Context: "check", FeatureID: &f.ID})
 	if err != nil {
 		if errors.Is(err, agentrun.ErrNoAgent) {
 			return nil, nil

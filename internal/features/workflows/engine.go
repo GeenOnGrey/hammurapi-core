@@ -470,7 +470,8 @@ func (e *Engine) DispatchOnce(ctx context.Context) (bool, error) {
 	return true, postgres.InTx(ctx, e.pool, func(tx pgx.Tx) error {
 		if derr != nil {
 			slog.WarnContext(ctx, "effect failed", "effect", effect, "run", runID, "attempt", attempts, "err", derr)
-			if attempts >= e.maxAttempts {
+			var perm *PermanentError
+			if attempts >= e.maxAttempts || errors.As(derr, &perm) {
 				if _, err := tx.Exec(ctx, `UPDATE outbox SET failed_at = now(), last_error = $2 WHERE id = $1`, id, derr.Error()); err != nil {
 					return err
 				}
@@ -608,3 +609,14 @@ func derefErr(s *string) string {
 	}
 	return *s
 }
+
+// PermanentError is an effect failure that retrying cannot fix (for example
+// an LLM connection without balance, PLT.HMR-0004 R20): the run gets
+// effect_failed at once instead of after WORKFLOW_MAX_ATTEMPTS.
+type PermanentError struct{ Err error }
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+// Permanent marks err as permanent.
+func Permanent(err error) error { return &PermanentError{Err: err} }

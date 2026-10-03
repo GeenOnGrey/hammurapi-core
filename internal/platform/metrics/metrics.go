@@ -25,12 +25,25 @@ var (
 	KafkaLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "hammurapi_kafka_consumer_lag", Help: "Kafka consumer lag by topic.",
 	}, []string{"topic"})
-	AgentSessions = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hammurapi_agent_sessions_active", Help: "Active ACP sessions in this pod.",
-	})
-	AgentProcesses = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hammurapi_agent_processes_up", Help: "Running agent processes in this pod.",
-	})
+	// Agent operator and LLM use (PLT.HMR-0004 arch §12).
+	AgentSessions = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hammurapi_agent_sessions_active", Help: "Active Pi sessions of the agent operator by kind.",
+	}, []string{"kind"})
+	AgentProcessStarts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_agent_process_starts_total", Help: "Pi process starts by reason (new, restore, crash, check).",
+	}, []string{"reason"})
+	LLMRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_llm_requests_total", Help: "Agent runs (prompts) by connection, model and scenario.",
+	}, []string{"connection", "model", "scenario"})
+	LLMErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_llm_errors_total", Help: "LLM errors by class and connection.",
+	}, []string{"class", "connection"})
+	LLMTokens = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_llm_tokens_total", Help: "LLM tokens by direction (in, out, cache_read, cache_write).",
+	}, []string{"direction"})
+	LLMCost = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_llm_cost_usd_total", Help: "LLM cost in US dollars by connection and model.",
+	}, []string{"connection", "model"})
 	GitProviderUp = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "hammurapi_git_provider_up", Help: "1 if the last git provider call succeeded.",
 	})
@@ -72,7 +85,7 @@ func init() {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		HTTPRequests, HTTPDuration, GitAPIErrors, WebhookEvents, KafkaLag,
-		AgentSessions, AgentProcesses, GitProviderUp, GateTransitions,
+		AgentSessions, AgentProcessStarts, LLMRequests, LLMErrors, LLMTokens, LLMCost, GitProviderUp, GateTransitions,
 		WorkflowRuns, WorkflowTransitionDuration, WorkflowBlocked, RunnerTasks, RunnerTaskDuration,
 		RunnerTokens, DeployRuns, ReleaseRollbacks,
 	)

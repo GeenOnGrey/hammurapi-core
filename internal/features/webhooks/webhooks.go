@@ -126,6 +126,13 @@ type Processor struct {
 	catalog  Catalog
 	reviews  Reviews
 	botLogin string
+	// Skills rebuilds the agent skills snapshot on pushes to /agent/ (PLT.HMR-0004 arch §5).
+	Skills SkillsSync
+}
+
+// SkillsSync is the Agent section as the push processor uses it.
+type SkillsSync interface {
+	SkillsChanged(ctx context.Context, branch string, paths []string) error
 }
 
 // NewProcessor creates the processor.
@@ -163,6 +170,15 @@ func (p *Processor) Dispatch(ctx context.Context, ev *git.HookEvent) error {
 		if push.Repo == "" || strings.EqualFold(push.Repo, p.provider.Repo()) {
 			if err := p.Apply(ctx, push); err != nil {
 				return err
+			}
+			if p.Skills != nil {
+				var paths []string
+				for _, c := range push.Commits {
+					paths = append(append(append(paths, c.Added...), c.Modified...), c.Removed...)
+				}
+				if err := p.Skills.SkillsChanged(ctx, push.Branch, paths); err != nil {
+					slog.ErrorContext(ctx, "agent skills snapshot", "err", err)
+				}
 			}
 		} else if err := p.servicePush(ctx, push); err != nil {
 			return err

@@ -22,8 +22,10 @@ import (
 	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
 	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agent"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentcfg"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	agentapi "github.com/GreenOnGrey/hammurapi-core/internal/platform/agent"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/httpx"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
@@ -203,9 +205,9 @@ func (e *Effects) Do(ctx context.Context, run workflows.RunRef, payload json.Raw
 	}
 	sctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	out, err := e.Runner.Once(sctx, mcp.Grant{UserID: user, Mode: mcp.ModeDiscovery, ContextType: "issue", ContextKey: is.Key, Subject: is.ID},
-		map[string]any{"task": "discovery", "issue": is.Key}, Prompt(is, prev, r.Context, names))
-	_ = cd.AddUsage(ctx, cycledata.Usage{Context: "discovery", IssueID: &is.ID, TokensIn: out.TokensIn, TokensOut: out.TokensOut})
+	out, err := e.Runner.Once(sctx, agentapi.ScenarioIssueAnalysis, mcp.Grant{UserID: user, Mode: mcp.ModeDiscovery, ContextType: "issue", ContextKey: is.Key, Subject: is.ID},
+		agentrun.System, Prompt(is, prev, r.Context, names))
+	e.Runner.Record(ctx, agentapi.ScenarioIssueAnalysis, out, agentcfg.UsageRecord{Context: "discovery", IssueID: &is.ID, UserID: is.AuthorID})
 	if err != nil {
 		return nil, err
 	}

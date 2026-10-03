@@ -4,8 +4,9 @@
 // api pod LISTENs and fans them out to its locally connected SSE clients. This
 // way an event produced by the worker (gate.updated) or by another api pod
 // (approvals.changed) reaches all users regardless of which pod they are on.
-// Agent token streams are delivered locally, because the ACP session and the
-// SSE stream live in the same pod (sticky sessions).
+// Agent token streams are delivered locally: the pod that runs the chat request
+// reads the operator's stream and the user's SSE stream lives there too
+// (sticky sessions).
 package events
 
 //go:generate go tool mockgen -destination=mocks/publisher.go -package=mocks . Publisher

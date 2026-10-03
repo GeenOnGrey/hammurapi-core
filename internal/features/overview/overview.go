@@ -32,10 +32,17 @@ type Focus struct {
 	Research    []Item `json:"research"`
 	Development []Item `json:"development"`
 	Release     []Item `json:"release"`
+	// Agent is shown to global administrators: the agent is not configured,
+	// an LLM connection or an MCP server needs attention (PLT.HMR-0004 R21).
+	Agent []Item `json:"agent"`
 }
 
 // Service implements the General section.
-type Service struct{ pool *pgxpool.Pool }
+type Service struct {
+	pool *pgxpool.Pool
+	// AgentFocus returns the Agent group; nil disables it.
+	AgentFocus func(ctx context.Context) ([]Item, error)
+}
 
 // NewService creates the service.
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
@@ -63,7 +70,14 @@ const expertDomains = `(SELECT domain_id FROM domain_experts WHERE user_id = $1)
 // Focus builds "In focus" for the user (NAV-02).
 func (s *Service) Focus(ctx context.Context, p *domain.Principal) (*Focus, error) {
 	uid := p.UserID
-	f := &Focus{Research: []Item{}, Development: []Item{}, Release: []Item{}}
+	f := &Focus{Research: []Item{}, Development: []Item{}, Release: []Item{}, Agent: []Item{}}
+	if p.GlobalAdmin && s.AgentFocus != nil {
+		items, err := s.AgentFocus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		f.Agent = append(f.Agent, items...)
+	}
 	research, err := s.collect(ctx, `
 		SELECT 'issue', i.key, i.title, 'verify_discovery', i.updated_at, NULL::text
 		FROM issues i WHERE i.status = 'verification' AND i.domain_id IN `+expertDomains+`

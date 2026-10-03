@@ -76,6 +76,12 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pg) && pg.Code == "23505"
 }
 
+// IsForeignKeyViolation reports a foreign key violation.
+func IsForeignKeyViolation(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "23503"
+}
+
 // IsCheckViolation reports a check constraint violation.
 func IsCheckViolation(err error) bool {
 	var pg *pgconn.PgError

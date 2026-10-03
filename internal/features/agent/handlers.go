@@ -29,6 +29,34 @@ func (s *Service) Routes(r chi.Router) {
 		httpx.JSON(w, http.StatusAccepted, res)
 		return nil
 	}))
+	// PLT.HMR-0004: repeat a failed message (ERR-08) and the model that answers (R11).
+	r.Post("/chat/messages/{id}/retry", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		p, err := httpx.MustPrincipal(r)
+		if err != nil {
+			return err
+		}
+		id, err := httpx.ParamUUID(r, "id")
+		if err != nil {
+			return err
+		}
+		res, err := s.Retry(r.Context(), p, id)
+		if err != nil {
+			return err
+		}
+		httpx.JSON(w, http.StatusAccepted, res)
+		return nil
+	}))
+	r.Get("/chat/session", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		if _, err := httpx.MustPrincipal(r); err != nil {
+			return err
+		}
+		info, err := s.Session(r.Context())
+		if err != nil {
+			return err
+		}
+		httpx.JSON(w, 200, info)
+		return nil
+	}))
 	r.Post("/chat/cancel", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		p, err := httpx.MustPrincipal(r)
 		if err != nil {

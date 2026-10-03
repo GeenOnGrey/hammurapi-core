@@ -3,13 +3,16 @@ package runner
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +23,7 @@ import (
 	"time"
 
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/codegen"
-	"github.com/GreenOnGrey/hammurapi-core/internal/platform/acp"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
 )
 
@@ -30,9 +33,10 @@ type Config struct {
 	Token       string
 	InternalURL string
 	WorkDir     string
-	ACPCommand  string
-	ACPArgs     []string
-	ACPEnv      []string
+	// WorkspaceAddr is where the workspace server listens (":8095") and
+	// WorkspaceHost how the agent operator reaches this pod (its IP).
+	WorkspaceAddr string
+	WorkspaceHost string
 	// NewProvider builds the git provider for the task's repository (tests replace it).
 	NewProvider func(d *Description) git.Provider
 }
@@ -67,12 +71,59 @@ func (c *client) call(ctx context.Context, method, path string, in, out any) err
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("%s %s: %s %s", method, path, resp.Status, strings.TrimSpace(string(raw)))
+		ce := &callError{Status: resp.StatusCode, Text: fmt.Sprintf("%s %s: %s %s", method, path, resp.Status, strings.TrimSpace(string(raw)))}
+		var body struct {
+			Error struct {
+				Code    string `json:"code"`
+				Details struct {
+					RetryAfter int `json:"retryAfter"`
+				} `json:"details"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &body) == nil {
+			ce.Code, ce.RetryAfter = body.Error.Code, time.Duration(body.Error.Details.RetryAfter)*time.Second
+		}
+		return ce
 	}
 	if out != nil && len(raw) > 0 {
 		return json.Unmarshal(raw, out)
 	}
 	return nil
+}
+
+// callError is a refused call to the internal API with its stable code.
+type callError struct {
+	Status     int
+	Code       string
+	RetryAfter time.Duration
+	Text       string
+}
+
+func (e *callError) Error() string { return e.Text }
+
+// openSession asks api for an agent session; while the operator is at its
+// limit of task sessions (agent_busy) it waits and asks again, as worker
+// sessions do, until the task's deadline.
+func openSession(ctx context.Context, c *client, taskID string, body map[string]any, out *AgentSession, waiting func()) error {
+	for {
+		err := c.call(ctx, http.MethodPost, "/internal/v1/tasks/"+taskID+"/agent-session", body, out)
+		var ce *callError
+		if !errors.As(err, &ce) || ce.Code != "agent_busy" {
+			return err
+		}
+		wait := ce.RetryAfter
+		if wait <= 0 {
+			wait = 10 * time.Second
+		}
+		wait = min(wait, time.Minute)
+		slog.Info("the agent is busy, waiting for a free session", "retry_in", wait)
+		waiting()
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for a free agent session: %w", ctx.Err())
+		case <-time.After(wait):
+		}
+	}
 }
 
 // Run executes one task and reports its result. It returns an error only when
@@ -157,7 +208,8 @@ func execute(ctx context.Context, c *client, cfg Config, d *Description) Result 
 		}
 	}
 	text, usage, err := runAgent(ctx, c, cfg, d, root)
-	res.TokensIn, res.TokensOut = usage.InputTokens, usage.OutputTokens
+	res.TokensIn, res.TokensOut = usage.TokensIn+usage.CacheRead, usage.TokensOut
+	res.Usage = usage
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return fail(errors.New("the task exceeded RUNNER_TIMEOUT"), res)
@@ -302,12 +354,46 @@ func Prompt(d *Description) string {
 	return b.String()
 }
 
-func runAgent(ctx context.Context, c *client, cfg Config, d *Description, root string) (string, acp.Usage, error) {
-	ws := &acp.Workspace{Command: cfg.ACPCommand, Args: cfg.ACPArgs, Env: cfg.ACPEnv, Root: root}
+// AgentSession is the answer of POST /internal/v1/tasks/{id}/agent-session.
+type AgentSession struct {
+	AgentURL     string `json:"agentUrl"`
+	SessionID    string `json:"sessionId"`
+	SessionToken string `json:"sessionToken"`
+	Model        string `json:"model"`
+}
+
+// runAgent runs the task's prompt in the agent operator (PLT.HMR-0004 arch
+// §4): the runner serves its working copy, asks api for a session and drives
+// it with the session token. The runner has no LLM keys; the operator has no
+// access to the repository. After an operator failure the task resumes once
+// in a new session (RUN-07).
+func runAgent(ctx context.Context, c *client, cfg Config, d *Description, root string) (string, agent.Usage, error) {
+	var usage agent.Usage
+	tok := make([]byte, 24)
+	_, _ = rand.Read(tok)
+	ws := &Workspace{Root: root, Token: hex.EncodeToString(tok), Env: CommandEnv(root)}
+	addr := cfg.WorkspaceAddr
+	if addr == "" {
+		addr = ":8095"
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", usage, fmt.Errorf("workspace server: %w", err)
+	}
+	wctx, wcancel := context.WithCancel(ctx)
+	defer wcancel()
+	go func() { _ = ws.Serve(wctx, ln) }()
+	host := cfg.WorkspaceHost
+	if host == "" {
+		host, _ = os.Hostname()
+	}
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	wsURL := "http://" + net.JoinHostPort(host, port)
+
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var mu sync.Mutex
-	var text strings.Builder
+	var answer strings.Builder
 	last := ""
 	chars := 0
 	limitHit := false
@@ -331,41 +417,72 @@ func runAgent(ctx context.Context, c *client, cfg Config, d *Description, root s
 		}
 	}()
 	defer close(done)
-	mcpServers := []acp.MCPServer{{Type: "http", Name: "hammurapi", URL: d.MCPURL,
-		Headers: []acp.NameValue{{Name: "Authorization", Value: "Bearer " + cfg.Token}}}}
 	prompt := Prompt(d)
-	_, err := ws.Run(actx, mcpServers, map[string]any{"hammurapi": map[string]any{"task": d.ID, "feature": d.Feature}},
-		[]acp.ContentBlock{acp.TextBlock(prompt)}, func(u acp.Update) {
+	var failure *agent.Event
+	for attempt := 0; attempt < 2; attempt++ {
+		var s AgentSession
+		if err := openSession(actx, c, cfg.TaskID, map[string]any{"workspaceUrl": wsURL, "workspaceToken": ws.Token, "resume": attempt > 0}, &s,
+			func() { mu.Lock(); last = "waiting for a free agent session"; mu.Unlock() }); err != nil {
+			return answer.String(), usage, fmt.Errorf("agent session: %w", err)
+		}
+		op := &agent.Client{BaseURL: s.AgentURL, Token: s.SessionToken}
+		msg := prompt
+		if attempt > 0 {
+			msg = "Continue the task: the agent session was interrupted, the current state is in the working copy.\n\n" + prompt
+		}
+		failure = nil
+		err = op.Prompt(actx, s.SessionID, agent.PromptRequest{Text: msg}, func(e agent.Event) {
 			mu.Lock()
 			defer mu.Unlock()
-			switch u.Kind {
-			case "token":
-				text.WriteString(u.Text)
-				chars += len(u.Text)
-			case "tool_call", "tool_call_update":
-				if u.Title != "" {
-					last = u.Title
-				}
+			switch e.Type {
+			case agent.EventTextDelta:
+				chars += len(e.Delta)
+				answer.WriteString(e.Delta)
+			case agent.EventToolCall:
+				last = e.Name
+			case agent.EventUsage:
+				usage.Add(e.Usage)
+			case agent.EventError:
+				ev := e
+				failure = &ev
 			}
-			// RUN-04: stop at RUNNER_TOKEN_LIMIT (usage estimated when the agent does not report it).
+			// RUN-04: stop at RUNNER_TOKEN_LIMIT (estimated while the run goes, exact at the end).
 			if d.TokenLimit > 0 && int64(chars/4)+int64(len(prompt)/4) > d.TokenLimit && !limitHit {
 				limitHit = true
-				cancel()
+				go func() { _ = op.Abort(context.WithoutCancel(actx), s.SessionID) }()
 			}
 		})
+		_ = op.Close(context.WithoutCancel(ctx), s.SessionID)
+		mu.Lock()
+		stopped := limitHit
+		mu.Unlock()
+		if stopped {
+			break // the limit was hit: never resume, whatever ended the stream
+		}
+		if errors.Is(err, agent.ErrStreamBroken) || errors.Is(err, agent.ErrSessionGone) {
+			slog.Warn("agent session broke off, resuming", "attempt", attempt+1, "err", err)
+			continue
+		}
+		break
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	usage := ws.Usage()
-	if usage.InputTokens == 0 {
-		usage.InputTokens = int64(len(prompt) / 4)
+	out := answer.String()
+	if usage.TokensIn == 0 {
+		usage.TokensIn = int64(len(prompt) / 4)
 	}
-	if usage.OutputTokens == 0 {
-		usage.OutputTokens = int64(chars / 4)
+	if usage.TokensOut == 0 {
+		usage.TokensOut = int64(chars / 4)
 	}
-	if limitHit {
-		return text.String(), usage, fmt.Errorf("the task exceeded RUNNER_TOKEN_LIMIT (%d tokens)", d.TokenLimit)
+	switch {
+	case limitHit:
+		return out, usage, fmt.Errorf("the task exceeded RUNNER_TOKEN_LIMIT (%d tokens)", d.TokenLimit)
+	case err != nil:
+		return out, usage, err
+	case failure != nil:
+		return out, usage, fmt.Errorf("[llm:%s] %s", failure.ErrorClass, failure.Message)
 	}
-	return text.String(), usage, err
+	return out, usage, nil
 }
 
 // ─── Checkout and diff through the provider API ──────────────────────

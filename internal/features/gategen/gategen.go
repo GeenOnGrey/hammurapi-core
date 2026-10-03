@@ -18,11 +18,13 @@ import (
 
 	"github.com/GreenOnGrey/hammurapi-core/internal/cycledata"
 	"github.com/GreenOnGrey/hammurapi-core/internal/domain"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentcfg"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/agentrun"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/features"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/gates"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/trace"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/workflows"
+	"github.com/GreenOnGrey/hammurapi-core/internal/platform/agent"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/events"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/git"
 	"github.com/GreenOnGrey/hammurapi-core/internal/platform/mcp"
@@ -303,10 +305,9 @@ func (e *Effects) Do(ctx context.Context, run workflows.RunRef, payload json.Raw
 	}
 	sctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	out, err := e.Runner.Once(sctx, mcp.Grant{UserID: in.Request.Initiator, Mode: mcp.ModeGenerate, ContextType: "feature", ContextKey: f.UniqueID,
-		Feature: f.UniqueID, Subject: f.ID}, map[string]any{"task": "generate_gates", "feature": f.UniqueID}, Prompt(f, in.Request, docs, templates, svcs))
-	_ = cycledata.New(e.Store.Q()).AddUsage(ctx, cycledata.Usage{Context: "gate", FeatureID: &f.ID, UserID: &in.Request.Initiator,
-		TokensIn: out.TokensIn, TokensOut: out.TokensOut})
+	out, err := e.Runner.Once(sctx, agent.ScenarioGateGeneration, mcp.Grant{UserID: in.Request.Initiator, Mode: mcp.ModeGenerate, ContextType: "feature", ContextKey: f.UniqueID,
+		Feature: f.UniqueID, Subject: f.ID}, agentrun.System, Prompt(f, in.Request, docs, templates, svcs))
+	e.Runner.Record(ctx, agent.ScenarioGateGeneration, out, agentcfg.UsageRecord{Context: "gate", FeatureID: &f.ID, UserID: &in.Request.Initiator})
 	if err != nil {
 		return nil, err
 	}

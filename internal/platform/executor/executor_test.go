@@ -14,12 +14,12 @@ import (
 )
 
 func TestK8sManifestIsolation(t *testing.T) {
-	k, _ := NewK8s(K8sConfig{Namespace: "hammurapi-runners", Image: "img", Timeout: 2 * time.Hour, Env: []string{"ACP_AGENT_COMMAND=claude-agent-acp"}})
+	k, _ := NewK8s(K8sConfig{Namespace: "hammurapi-runners", Image: "img", Timeout: 2 * time.Hour, Env: []string{"LOG_LEVEL=debug"}})
 	m := k.Manifest(Task{ID: "0b6c1f7e-1111-2222-3333-444455556666", Token: "tok", InternalURL: "http://api:8081"})
 	raw, _ := json.Marshal(m)
 	s := string(raw)
 	for _, want := range []string{`"automountServiceAccountToken":false`, `"readOnlyRootFilesystem":true`, `"runAsNonRoot":true`,
-		`"activeDeadlineSeconds":7200`, `"ttlSecondsAfterFinished":3600`, `"backoffLimit":0`, `"ACP_AGENT_COMMAND"`} {
+		`"activeDeadlineSeconds":7200`, `"ttlSecondsAfterFinished":3600`, `"backoffLimit":0`, `"LOG_LEVEL"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("manifest lacks %s", want)
 		}

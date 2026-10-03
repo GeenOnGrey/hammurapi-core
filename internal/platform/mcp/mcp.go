@@ -1,12 +1,10 @@
 // Package mcp is a minimal Model Context Protocol server (Streamable HTTP with
-// JSON responses) through which the agent reaches Hammurapi tools. Every ACP
+// JSON responses) through which the agent reaches Hammurapi tools. Every agent
 // session gets its own bearer token; the token's Grant decides what the agent
 // may do on behalf of the user.
 package mcp
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -15,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 
@@ -257,37 +254,4 @@ func (s *Server) dispatch(ctx context.Context, g Grant, req request) (any, *rpcE
 
 func toolResult(text string, isErr bool) map[string]any {
 	return map[string]any{"content": []map[string]string{{"type": "text", "text": text}}, "isError": isErr}
-}
-
-// RunStdioProxy bridges MCP over stdio to the HTTP endpoint for agents that only
-// support stdio MCP servers. Invoked as `hammurapi mcp-proxy`.
-func RunStdioProxy(ctx context.Context, url, token string) error {
-	sc := bufio.NewScanner(os.Stdin)
-	sc.Buffer(make([]byte, 64<<10), 16<<20)
-	out := bufio.NewWriter(os.Stdout)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(line))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/event-stream")
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK && len(bytes.TrimSpace(b)) > 0 {
-			out.Write(bytes.TrimSpace(b))
-			out.WriteByte('\n')
-			out.Flush()
-		}
-	}
-	return sc.Err()
 }

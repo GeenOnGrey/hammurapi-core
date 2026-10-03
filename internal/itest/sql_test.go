@@ -7,6 +7,7 @@ package itest
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"os"
 	"testing"
 	"time"
@@ -32,8 +33,17 @@ import (
 
 var pool *pgxpool.Pool
 
+// adminURL is the server the tests create their databases on: a ready
+// Postgres from HMR_TEST_DATABASE_URL (local runs without Docker) or the
+// dockertest container.
+var adminURL string
+
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+	if url := os.Getenv("HMR_TEST_DATABASE_URL"); url != "" {
+		adminURL = url
+		os.Exit(runOn(ctx, m, nil))
+	}
 	dp, err := dockertest.NewPool(ctx, "", dockertest.WithMaxWait(2*time.Minute))
 	if err != nil {
 		fmt.Println("docker unavailable:", err)
@@ -46,26 +56,65 @@ func TestMain(m *testing.M) {
 		_ = dp.Close(ctx)
 		os.Exit(1)
 	}
-	url := fmt.Sprintf("postgres://postgres:pw@%s/hammurapi?sslmode=disable", res.GetHostPort("5432/tcp"))
+	adminURL = fmt.Sprintf("postgres://postgres:pw@%s/postgres?sslmode=disable", res.GetHostPort("5432/tcp"))
 	err = dp.Retry(ctx, time.Minute, func() error {
-		var err error
-		if pool, err = postgres.Connect(ctx, url); err != nil {
+		p, err := postgres.Connect(ctx, adminURL)
+		if err != nil {
 			return err
 		}
-		return pool.Ping(ctx)
+		defer p.Close()
+		return p.Ping(ctx)
 	})
-	if err == nil {
-		err = postgres.Migrate(ctx, url)
-	}
 	if err != nil {
 		fmt.Println("postgres:", err)
 		_ = dp.Close(ctx)
 		os.Exit(1)
 	}
-	code := m.Run()
-	pool.Close()
+	code := runOn(ctx, m, nil)
 	_ = dp.Close(ctx)
 	os.Exit(code)
+}
+
+// runOn migrates a fresh database, runs the tests on it and drops it.
+func runOn(ctx context.Context, m *testing.M, _ any) int {
+	url, drop, err := freshDB(ctx, "itest")
+	if err == nil {
+		if pool, err = postgres.Connect(ctx, url); err == nil {
+			err = postgres.Migrate(ctx, url)
+		}
+	}
+	if err != nil {
+		fmt.Println("postgres:", err)
+		return 1
+	}
+	code := m.Run()
+	pool.Close()
+	drop()
+	return code
+}
+
+// freshDB creates an empty database on the test server.
+func freshDB(ctx context.Context, prefix string) (string, func(), error) {
+	admin, err := postgres.Connect(ctx, adminURL)
+	if err != nil {
+		return "", nil, err
+	}
+	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		admin.Close()
+		return "", nil, err
+	}
+	u, err := neturl.Parse(adminURL)
+	if err != nil {
+		admin.Close()
+		return "", nil, err
+	}
+	u.Path = "/" + name
+	drop := func() {
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		admin.Close()
+	}
+	return u.String(), drop, nil
 }
 
 func must(t *testing.T, err error) {
@@ -267,7 +316,7 @@ func TestRepositories(t *testing.T) {
 
 	// Chat history and attachments.
 	chat := agent.NewRepository(pool)
-	mid, _, err := chat.Insert(ctx, pool, u.ID, "user", "general", nil, "hello", true)
+	mid, _, err := chat.Insert(ctx, pool, agent.NewMessage{UserID: u.ID, Role: "user", Mode: "general", Content: "hello", IsVoice: true})
 	must(t, err)
 	att := attachments.NewService(pool, nil, 1<<20, nil)
 	if _, err := pool.Exec(ctx, `INSERT INTO attachments (user_id, file_name, mime_type, size_bytes, s3_key) VALUES ($1,'a.png','image/png',1,'k1')`, u.ID); err != nil {
@@ -281,11 +330,28 @@ func TestRepositories(t *testing.T) {
 	if len(msgs) != 1 || len(msgs[0].Attachments) != 1 || !msgs[0].IsVoice {
 		t.Fatalf("history %+v", msgs)
 	}
-	must(t, chat.SaveSessionID(ctx, u.ID, "s1"))
-	sidStr, err := chat.SessionID(ctx, u.ID)
+	// PLT.HMR-0004: one active Pi session per user; the snapshot key survives.
+	s1, err := chat.OpenSession(ctx, u.ID)
 	must(t, err)
-	if sidStr != "s1" {
-		t.Fatal("agent session id")
+	must(t, chat.SetSessionOperator(ctx, s1.ID, "op-1", "deepseek-v4-flash", "off", uuid.Nil))
+	must(t, chat.SetSnapshot(ctx, s1.ID, "agent/sessions/x.jsonl"))
+	must(t, chat.ClearOperator(ctx, s1.ID))
+	s2, err := chat.OpenSession(ctx, u.ID)
+	must(t, err)
+	if s2.ID != s1.ID || s2.SnapshotKey != "agent/sessions/x.jsonl" || s2.OperatorID != "" {
+		t.Fatalf("session %+v", s2)
+	}
+	must(t, chat.SetErrorClass(ctx, mid, "insufficient_balance"))
+	m, err := chat.Get(ctx, u.ID, mid)
+	must(t, err)
+	if m.ErrorClass == nil || *m.ErrorClass != "insufficient_balance" {
+		t.Fatalf("error class %+v", m)
+	}
+	must(t, chat.CloseSession(ctx, u.ID))
+	s3, err := chat.OpenSession(ctx, u.ID)
+	must(t, err)
+	if s3.ID == s1.ID || s3.SnapshotKey != "" {
+		t.Fatal("a closed session was reused")
 	}
 	// ATT-05: someone else's attachment.
 	_, err = att.Get(ctx, uuid.New(), al.Items[0].ID)

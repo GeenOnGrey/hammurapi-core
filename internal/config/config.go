@@ -21,8 +21,10 @@ type Config struct {
 	InternalAddr string
 	// InternalURL is how agent processes and runner tasks reach InternalAddr.
 	InternalURL string
-	// WorkerMCPAddr is the worker's own MCP endpoint for Discovery, generation and checks.
+	// WorkerMCPAddr is the worker's own MCP endpoint for its agent sessions
+	// (Analysis, generation, checks); WorkerMCPURL is how the agent operator reaches it.
 	WorkerMCPAddr string
+	WorkerMCPURL  string
 	PublicURL     string // external URL of the web app, used for OAuth redirects and cookies
 	// PublicWebURL and PublicAPIURL split the SPA and the API across domains
 	// (web.<domain>, api.<domain>); both default to PublicURL (one origin).
@@ -53,12 +55,16 @@ type Config struct {
 	BotLogin         string // provider login of the bot (agent PRs, own review replies)
 	CIResultsSecret  []string
 
-	// Agent
-	ACPCommand     string
-	ACPArgs        []string
-	ACPEnv         []string
-	ACPMaxProcs    int
-	ACPIdleTimeout time.Duration
+	// Agent operator (PLT.HMR-0004 tech §12)
+	AgentAddr         string        // the operator as api and worker reach it
+	AgentRunnerURL    string        // the operator as runner pods reach it
+	AgentServiceToken string        // service token of the operator's internal API
+	AgentIdleTimeout  time.Duration // a chat session idle this long is saved and closed
+	// BootstrapDeepSeekKey creates the first LLM connection once (tech spec §11).
+	BootstrapDeepSeekKey string
+	// BootstrapDeepSeekURL replaces the preset API address of that connection
+	// (development and demos: the scripted fakellm).
+	BootstrapDeepSeekURL string
 
 	BootstrapAdmins []string
 
@@ -96,7 +102,7 @@ type Config struct {
 	RunnerWorkdir         string
 	RunnerCPU             string
 	RunnerMemory          string
-	RunnerAgentSecret     string // Kubernetes Secret with agent credentials for runner pods
+	RunnerWorkspacePort   int // the runner's workspace server (PLT.HMR-0004 arch §4.2)
 	WorkflowMaxAttempts   int
 	WorkflowLease         time.Duration
 	DiscoveryTimeout      time.Duration
@@ -124,50 +130,50 @@ var DefaultImportAssetTypes = []string{
 // Load reads configuration from the environment. Mode-specific requirements are checked by Validate.
 func Load() (*Config, error) {
 	c := &Config{
-		HTTPAddr:          env("HTTP_ADDR", ":8080"),
-		ServiceAddr:       env("SERVICE_ADDR", ":9100"),
-		MCPAddr:           env("MCP_ADDR", ""),
-		InternalAddr:      env("INTERNAL_ADDR", env("MCP_ADDR", ":8081")),
-		WorkerMCPAddr:     env("WORKER_MCP_ADDR", "127.0.0.1:8083"),
-		PublicURL:         strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
-		GitProvider:       strings.ToLower(env("GIT_PROVIDER", "")),
-		GitBaseURL:        strings.TrimRight(env("GIT_BASE_URL", ""), "/"),
-		GitRepo:           env("GIT_REPO", ""),
-		GitDefaultBranch:  env("GIT_DEFAULT_BRANCH", "main"),
-		GitHubAppID:       env("GITHUB_APP_ID", ""),
-		GitHubPrivateKey:  env("GITHUB_APP_PRIVATE_KEY", ""),
-		GitHubClientID:    env("GITHUB_CLIENT_ID", ""),
-		GitHubSecret:      env("GITHUB_CLIENT_SECRET", ""),
-		GitLabClientID:    env("GITLAB_CLIENT_ID", ""),
-		GitLabSecret:      env("GITLAB_CLIENT_SECRET", ""),
-		WebhookSecret:     env("WEBHOOK_SECRET", ""),
-		GitLabBotToken:    env("GITLAB_BOT_TOKEN", ""),
-		BotLogin:          env("HAMMURAPI_BOT_LOGIN", ""),
-		CIResultsSecret:   splitList(env("CI_RESULTS_SECRET", ""), ","),
-		RunnerExecutor:    strings.ToLower(env("RUNNER_EXECUTOR", "k8s")),
-		RunnerNamespace:   env("RUNNER_NAMESPACE", "hammurapi-runners"),
-		RunnerImage:       env("RUNNER_IMAGE", ""),
-		RunnerWorkdir:     env("RUNNER_WORKDIR", "/var/lib/hammurapi/runs"),
-		RunnerCPU:         env("RUNNER_CPU", "2"),
-		RunnerMemory:      env("RUNNER_MEMORY", "4Gi"),
-		RunnerAgentSecret: env("RUNNER_AGENT_SECRET", ""),
-		ACPCommand:        env("ACP_AGENT_COMMAND", ""),
-		ACPArgs:           strings.Fields(env("ACP_AGENT_ARGS", "")),
-		ACPEnv:            splitList(env("ACP_AGENT_ENV", ""), ";"),
-		BootstrapAdmins:   splitList(env("BOOTSTRAP_ADMINS", ""), ","),
-		DatabaseURL:       env("DATABASE_URL", ""),
-		KafkaBrokers:      splitList(env("KAFKA_BROKERS", ""), ","),
-		S3Endpoint:        env("S3_ENDPOINT", ""),
-		S3Bucket:          env("S3_BUCKET", "hammurapi"),
-		S3AccessKey:       env("S3_ACCESS_KEY", ""),
-		S3SecretKey:       env("S3_SECRET_KEY", ""),
-		WhisperURL:        strings.TrimRight(env("WHISPER_URL", ""), "/"),
-		OTLPEndpoint:      env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-		LogLevel:          env("LOG_LEVEL", "info"),
-		DefaultLanguage:   env("DEFAULT_LANGUAGE", "en"),
+		HTTPAddr:             env("HTTP_ADDR", ":8080"),
+		ServiceAddr:          env("SERVICE_ADDR", ":9100"),
+		MCPAddr:              env("MCP_ADDR", ""),
+		InternalAddr:         env("INTERNAL_ADDR", env("MCP_ADDR", ":8081")),
+		WorkerMCPAddr:        env("WORKER_MCP_ADDR", ":8083"),
+		PublicURL:            strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
+		GitProvider:          strings.ToLower(env("GIT_PROVIDER", "")),
+		GitBaseURL:           strings.TrimRight(env("GIT_BASE_URL", ""), "/"),
+		GitRepo:              env("GIT_REPO", ""),
+		GitDefaultBranch:     env("GIT_DEFAULT_BRANCH", "main"),
+		GitHubAppID:          env("GITHUB_APP_ID", ""),
+		GitHubPrivateKey:     env("GITHUB_APP_PRIVATE_KEY", ""),
+		GitHubClientID:       env("GITHUB_CLIENT_ID", ""),
+		GitHubSecret:         env("GITHUB_CLIENT_SECRET", ""),
+		GitLabClientID:       env("GITLAB_CLIENT_ID", ""),
+		GitLabSecret:         env("GITLAB_CLIENT_SECRET", ""),
+		WebhookSecret:        env("WEBHOOK_SECRET", ""),
+		GitLabBotToken:       env("GITLAB_BOT_TOKEN", ""),
+		BotLogin:             env("HAMMURAPI_BOT_LOGIN", ""),
+		CIResultsSecret:      splitList(env("CI_RESULTS_SECRET", ""), ","),
+		RunnerExecutor:       strings.ToLower(env("RUNNER_EXECUTOR", "k8s")),
+		RunnerNamespace:      env("RUNNER_NAMESPACE", "hammurapi-runners"),
+		RunnerImage:          env("RUNNER_IMAGE", ""),
+		RunnerWorkdir:        env("RUNNER_WORKDIR", "/var/lib/hammurapi/runs"),
+		RunnerCPU:            env("RUNNER_CPU", "2"),
+		RunnerMemory:         env("RUNNER_MEMORY", "4Gi"),
+		AgentAddr:            strings.TrimRight(env("AGENT_ADDR", "http://agent:8090"), "/"),
+		AgentServiceToken:    env("AGENT_SERVICE_TOKEN", ""),
+		BootstrapDeepSeekKey: env("BOOTSTRAP_DEEPSEEK_API_KEY", ""),
+		BootstrapDeepSeekURL: env("BOOTSTRAP_DEEPSEEK_BASE_URL", ""),
+		BootstrapAdmins:      splitList(env("BOOTSTRAP_ADMINS", ""), ","),
+		DatabaseURL:          env("DATABASE_URL", ""),
+		KafkaBrokers:         splitList(env("KAFKA_BROKERS", ""), ","),
+		S3Endpoint:           env("S3_ENDPOINT", ""),
+		S3Bucket:             env("S3_BUCKET", "hammurapi"),
+		S3AccessKey:          env("S3_ACCESS_KEY", ""),
+		S3SecretKey:          env("S3_SECRET_KEY", ""),
+		WhisperURL:           strings.TrimRight(env("WHISPER_URL", ""), "/"),
+		OTLPEndpoint:         env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		LogLevel:             env("LOG_LEVEL", "info"),
+		DefaultLanguage:      env("DEFAULT_LANGUAGE", "en"),
 	}
 	var err error
-	if c.ACPMaxProcs, err = envInt("ACP_MAX_PROCESSES", 4); err != nil {
+	if c.RunnerWorkspacePort, err = envInt("RUNNER_WORKSPACE_PORT", 8095); err != nil {
 		return nil, err
 	}
 	if c.RunnerTimeout, err = envDuration("RUNNER_TIMEOUT", 2*time.Hour); err != nil {
@@ -191,7 +197,7 @@ func Load() (*Config, error) {
 	if c.DiscoveryTimeout, err = envDuration("DISCOVERY_TIMEOUT", 20*time.Minute); err != nil {
 		return nil, err
 	}
-	if c.ACPIdleTimeout, err = envDuration("ACP_SESSION_IDLE_TIMEOUT", 30*time.Minute); err != nil {
+	if c.AgentIdleTimeout, err = envDuration("AGENT_IDLE_TIMEOUT", 15*time.Minute); err != nil {
 		return nil, err
 	}
 	if c.UploadMaxBytes, err = envInt64("UPLOAD_MAX_BYTES", 20<<20); err != nil {
@@ -235,6 +241,8 @@ func Load() (*Config, error) {
 		c.GitOAuthURL = c.GitBaseURL
 	}
 	c.InternalURL = strings.TrimRight(env("INTERNAL_URL", "http://"+localAddr(c.InternalAddr)), "/")
+	c.WorkerMCPURL = strings.TrimRight(env("WORKER_MCP_URL", "http://"+localAddr(c.WorkerMCPAddr)), "/")
+	c.AgentRunnerURL = strings.TrimRight(env("AGENT_RUNNER_URL", c.AgentAddr), "/")
 	c.PublicWebURL = strings.TrimRight(env("PUBLIC_WEB_URL", c.PublicURL), "/")
 	c.PublicAPIURL = strings.TrimRight(env("PUBLIC_API_URL", c.PublicURL), "/")
 	for _, o := range splitList(env("CORS_ALLOWED_ORIGINS", ""), ",") {
@@ -289,6 +297,9 @@ func (c *Config) Validate(mode string) error {
 	}
 	if mode == "api" {
 		need("WEBHOOK_SECRET", c.WebhookSecret)
+	}
+	if mode == "api" || mode == "worker" {
+		need("AGENT_SERVICE_TOKEN", c.AgentServiceToken)
 	}
 	need("S3_ENDPOINT", c.S3Endpoint)
 	return missingErr(missing)

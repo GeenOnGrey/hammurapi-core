@@ -312,10 +312,12 @@ func (s *Service) Get(ctx context.Context, p *domain.Principal, uniqueID string)
 	for _, sv := range svcs {
 		c.Services = append(c.Services, ServiceRef{Key: sv.Key, Repo: sv.Repo, Autonomy: sv.Autonomy})
 	}
-	if r, err := cd.ReleaseByFeature(ctx, f.ID); err == nil {
-		c.Release = &r.Key
-	} else if !errors.Is(err, cycledata.ErrNotFound) {
+	r, err := cd.ReleaseByFeature(ctx, f.ID) // nil without a release
+	if err != nil {
 		return nil, err
+	}
+	if r != nil {
+		c.Release = &r.Key
 	}
 	var wf WorkflowRef
 	err = s.store.Q().QueryRow(ctx, `SELECT kind::text, state, step, last_error FROM workflow_runs
