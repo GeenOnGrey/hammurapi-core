@@ -1,6 +1,6 @@
 /**
  * hammurapi-workspace — Pi's built-in file and shell tools, executed in the
- * runner task of Hammurapi (PLT.HMR-0004 arch §4.3).
+ * runner task of Hammurapi (HMR.CMN-0004 arch §4.3).
  *
  * The agent (Pi) runs in the agent operator; the repository checkout and the
  * commands live in an isolated runner pod. This extension keeps Pi's own read,
@@ -72,7 +72,7 @@ async function call<T>(op: string, body: unknown, signal?: AbortSignal): Promise
 			const e = JSON.parse(text);
 			code = e.error ?? code;
 			message = e.message ?? message;
-		} catch {}
+		} catch { }
 		if (res.status === 404) {
 			const err = new WorkspaceError(404, code, message) as WorkspaceError & { code: string };
 			(err as unknown as { code: string }).code = "ENOENT";
@@ -148,7 +148,7 @@ function bashOps(localCwd: string): BashOperations {
 			});
 			if (!res.ok || !res.body) throw new Error(`workspace exec: ${res.status} ${await res.text()}`);
 			const onAbort = () => {
-				void call("abort", {}).catch(() => {});
+				void call("abort", {}).catch(() => { });
 			};
 			signal?.addEventListener("abort", onAbort, { once: true });
 			const reader = res.body.getReader();
@@ -156,7 +156,7 @@ function bashOps(localCwd: string): BashOperations {
 			let buf = "";
 			let final: { exitCode?: number; timedOut?: boolean; aborted?: boolean; timeoutSec?: number } = {};
 			try {
-				for (;;) {
+				for (; ;) {
 					const { value, done } = await reader.read();
 					if (done) break;
 					buf += decoder.decode(value, { stream: true });

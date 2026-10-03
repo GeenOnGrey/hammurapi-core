@@ -1,4 +1,4 @@
--- PLT.HMR-0004: LLM connections and the model of every agent scenario.
+-- HMR.CMN-0004: LLM connections and the model of every agent scenario.
 -- Expand only: new types and tables; nothing existing changes.
 
 -- +goose Up

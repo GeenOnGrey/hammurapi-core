@@ -1,8 +1,8 @@
-# Релиз hammurapi-core (PLT.INFRA-0002):
+# Релиз hammurapi-core (HMR.INFRA-0002):
 #   push тега vX.Y.Z  →  lint ∥ test → build → scan → deploy (+ проверки после выкатки)
 #   ручной запуск     →  выкатка уже собранного и подписанного образа тега, без
 #                        пересборки (R9); с run_id и callback_url — запуск по
-#                        контракту выкатки Hammurapi PLT.HMR-0002 (R22).
+#                        контракту выкатки Hammurapi HMR.CMN-0002 (R22).
 # Переменная репозитория или организации AUTO_DEPLOY=false выключает выкатку по
 # тегу (сборка, сканирование и публикация продолжаются) — R23.
 name: release

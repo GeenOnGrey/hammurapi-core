@@ -1,4 +1,4 @@
--- PLT.HMR-0004: MCP servers of the agent (streamable HTTP with header auth).
+-- HMR.CMN-0004: MCP servers of the agent (streamable HTTP with header auth).
 
 -- +goose Up
 -- +goose StatementBegin

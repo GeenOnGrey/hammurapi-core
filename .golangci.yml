@@ -1,4 +1,4 @@
-# golangci-lint v2 (PLT.INFRA-0002: линтер в пайплайне релиза и на каждый PR).
+# golangci-lint v2 (HMR.INFRA-0002: линтер в пайплайне релиза и на каждый PR).
 version: "2"
 
 linters:

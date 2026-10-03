@@ -49,7 +49,7 @@ internal/jobs/cleaner the cleaner mode
   latest commit of the gate folder and refuses if the projection has not seen it yet.
 - **Events** are published with `pg_notify`; every `api` pod listens and fans them out over one SSE
   stream per browser. Agent tokens go straight to the local SSE stream (sticky sessions).
-- **Agent (PLT.HMR-0004):** Pi runs in the agent operator (mode `agent`), one process per session.
+- **Agent (HMR.CMN-0004):** Pi runs in the agent operator (mode `agent`), one process per session.
   `api` and `worker` resolve the scenario's LLM connection, model, skills and MCP servers
   (`internal/features/agentcfg`, Admin → Agent) and open sessions over HTTP with
   `AGENT_SERVICE_TOKEN`; runner tasks open their own with a task token. Hammurapi tools are an MCP
@@ -83,7 +83,7 @@ reads `PUBLIC_URL` (external URL, used for the OAuth callback and `Secure` cooki
 (`:8080`), `SERVICE_ADDR` (`:9100`), `MCP_ADDR` (`127.0.0.1:8081`) and `S3_USE_SSL`.
 
 When the SPA and the API live on different subdomains (`web.<domain>`, `api.<domain>`,
-PLT.INFRA-0002), set `PUBLIC_WEB_URL` (where the browser returns after sign-in),
+HMR.INFRA-0002), set `PUBLIC_WEB_URL` (where the browser returns after sign-in),
 `PUBLIC_API_URL` (OAuth callback, deploy callbacks), `CORS_ALLOWED_ORIGINS` (origins allowed to
 call the API with credentials) and `COOKIE_DOMAIN` (shared Domain of the session and CSRF
 cookies). All default to a single origin.
@@ -96,7 +96,7 @@ A tag `vX.Y.Z` runs `.github/workflows/release.yml`: lint (golangci-lint) ∥ te
 signature) → Trivy scan
 (CRITICAL/HIGH with a fix block the deploy) → deploy through the reusable workflow of
 `hammurapi` (`.github/workflows/deploy-component.yml`). A manual run with a tag redeploys the signed image without a rebuild; with
-`run_id` and `callback_url` it follows the PLT.HMR-0002 deploy contract.
+`run_id` and `callback_url` it follows the HMR.CMN-0002 deploy contract.
 
 Versions are pinned in `deploy/versions.env` (`DEPLOY_WORKFLOW_REF`, `CHART_VERSION`,
 `PI_VERSION`) and change by PR; after changing `DEPLOY_WORKFLOW_REF` run

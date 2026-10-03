@@ -31,7 +31,9 @@ func TestSkillBindingsFollowSkillsYAML(t *testing.T) {
 	prov.EXPECT().GetFile(gomock.Any(), gomock.Any(), gomock.Any(), agentcfg.SkillsDir+"/spec-review/SKILL.md").
 		Return(&git.File{Content: []byte("---\nname: spec-review\ndescription: Reviews specs\n---\nBody\n")}, nil).AnyTimes()
 	prov.EXPECT().GetFile(gomock.Any(), gomock.Any(), gomock.Any(), agentcfg.SkillsYAML).
-		DoAndReturn(func(context.Context, string, string, string) (*git.File, error) { return &git.File{Content: []byte(yaml)}, nil }).AnyTimes()
+		DoAndReturn(func(context.Context, string, string, string) (*git.File, error) {
+			return &git.File{Content: []byte(yaml)}, nil
+		}).AnyTimes()
 	box, err := crypto.NewBox(bytes.Repeat([]byte{7}, 32))
 	must(t, err)
 	s := agentcfg.NewService(pool, box, fakeOperator{}, nil, &memStorage{}, prov, nil, "main")

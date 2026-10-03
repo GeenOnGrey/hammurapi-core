@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
--- Hammurapi schema: PLT.HMR-0001 (MVP) + PLT.HMR-0002 (closed development cycle).
+-- Hammurapi schema: HMR.CMN-0001 (MVP) + HMR.CMN-0002 (closed development cycle).
 -- The MVP was never in production, so its migrations were rewritten in place.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
@@ -71,7 +71,7 @@ CREATE TABLE user_sessions (
 );
 CREATE INDEX ON user_sessions (expires_at);
 
--- Area administrators edit the rules of their area (editor/approver roles are gone: PLT.HMR-0002 R39).
+-- Area administrators edit the rules of their area (editor/approver roles are gone: HMR.CMN-0002 R39).
 CREATE TABLE area_admins (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   area    area NOT NULL,

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// PLT.INFRA-0002: the SPA on web.<domain>, the API on api.<domain>.
+// HMR.INFRA-0002: the SPA on web.<domain>, the API on api.<domain>.
 func TestCallbackRedirectsToWeb(t *testing.T) {
 	h := NewHandlers(nil, PublicConfig{}, true).WithWeb("https://web.example.org/", "example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback?state=s1&error=access_denied", nil)

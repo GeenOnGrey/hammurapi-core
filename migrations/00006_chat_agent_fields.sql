@@ -1,4 +1,4 @@
--- PLT.HMR-0004: model, connection and error class of chat messages, and
+-- HMR.CMN-0004: model, connection and error class of chat messages, and
 -- retries. Nullable columns: no table rewrite.
 
 -- +goose Up
