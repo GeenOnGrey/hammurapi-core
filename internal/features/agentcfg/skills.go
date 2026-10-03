@@ -357,7 +357,7 @@ func renderSkillsConfig(cfg skillsConfig) []byte {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("# Binding of agent skills to Hammurapi scenarios (PLT.HMR-0004 R12).\n# Changed through the Agent section; every change is a PR.\nskills:\n")
+	b.WriteString("# Binding of agent skills to Hammurapi scenarios (HMR.CMN-0004 R12).\n# Changed through the Agent section; every change is a PR.\nskills:\n")
 	if len(names) == 0 {
 		return []byte(strings.TrimSuffix(b.String(), "\n") + " {}\n")
 	}

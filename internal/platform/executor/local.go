@@ -18,7 +18,7 @@ type Local struct {
 	WorkDir string
 	Timeout time.Duration
 	// Env is passed to the runner in addition to the task variables: never
-	// instance secrets (the runner has no LLM keys either, PLT.HMR-0004).
+	// instance secrets (the runner has no LLM keys either, HMR.CMN-0004).
 	Env []string
 	// WorkspaceHost is how the agent operator reaches this process's
 	// workspace servers (each task listens on a free port).

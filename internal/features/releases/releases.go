@@ -1,4 +1,4 @@
-// Package releases implements releases (PLT.HMR-0002 R25–R34): creation after
+// Package releases implements releases (HMR.CMN-0002 R25–R34): creation after
 // validation, the release workflow — merge of service PRs in the rollout order,
 // production deploys with the first-signal-wins rule, feature flags,
 // confirmation with the merge of the specification PR — and the release API.

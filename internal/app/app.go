@@ -289,7 +289,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 		return out, err
 	}
 	mcpServer := mcp.NewServer()
-	mcpServer.Register(sl.spec.Tools()...) // spec_* in every scenario (HMR.CMN-0005 R18)
+	mcpServer.Register(sl.spec.Tools()...) // spec_* in every scenario (FTR.HMR.CMN-0005 R18)
 	chatSvc := agent.NewService(agent.NewRepository(c.pool), c.store, operatorClient, agentCfg, mcpServer, cfg.InternalURL+"/mcp", hub, attSvc, c.s3, loadPrincipal)
 	chatSvc.IdleTimeout = cfg.AgentIdleTimeout
 	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
@@ -484,7 +484,7 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 		return kafka.Consume(gctx, cfg.KafkaBrokers, "hammurapi-worker", kafka.TopicImports, importSvc.Handle)
 	})
 	g.Go(func() error { return engine.Run(gctx) })
-	g.Go(func() error { return sl.spec.Run(gctx) }) // checks of the specification repository (HMR.CMN-0005)
+	g.Go(func() error { return sl.spec.Run(gctx) }) // checks of the specification repository (FTR.HMR.CMN-0005)
 	g.Go(func() error {
 		// Full catalog synchronization once a day (arch §10); pushes trigger it in between.
 		t := time.NewTicker(24 * time.Hour)

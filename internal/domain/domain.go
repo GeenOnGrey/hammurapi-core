@@ -87,7 +87,7 @@ const (
 	PhaseRolledBack FeaturePhase = "rolled_back"
 	PhaseDeleted    FeaturePhase = "deleted"
 	// PhaseIndexed: found in the default branch of the repository and indexed
-	// as implemented, without gates (HMR.CMN-0005 R4).
+	// as implemented, without gates (FTR.HMR.CMN-0005 R4).
 	PhaseIndexed FeaturePhase = "indexed"
 )
 

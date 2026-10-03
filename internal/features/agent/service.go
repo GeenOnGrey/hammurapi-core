@@ -1,5 +1,5 @@
-// Package agent implements the chat with the user's agent (PLT.HMR-0001,
-// PLT.HMR-0002, PLT.HMR-0004): messages go to a Pi session in the agent
+// Package agent implements the chat with the user's agent (HMR.CMN-0001,
+// HMR.CMN-0002, HMR.CMN-0004): messages go to a Pi session in the agent
 // operator, tokens stream over SSE, and the agent works through Hammurapi's
 // MCP tools. The model and keys of the chat scenario are resolved from the
 // Agent section on every message, so a change applies without a redeploy.
@@ -36,7 +36,7 @@ import (
 // historyOnRestore is how many recent messages seed a session without a snapshot.
 const historyOnRestore = 20
 
-// SSE events of the chat added by PLT.HMR-0004 (tech spec §3).
+// SSE events of the chat added by HMR.CMN-0004 (tech spec §3).
 const (
 	EventChatError = "chat.error"
 	EventChatModel = "chat.model"
@@ -49,7 +49,7 @@ var toneGuide = map[domain.AgentTone]string{
 	domain.ToneMentor:   "mentor: explain the reasoning and suggest what to consider next",
 }
 
-// ChatContext is the object the chat works on (PLT.HMR-0002 tech §7).
+// ChatContext is the object the chat works on (HMR.CMN-0002 tech §7).
 type ChatContext struct {
 	Type string  `json:"type"` // issue | feature | release
 	Key  string  `json:"key"`
@@ -378,7 +378,7 @@ func (s *Service) run(ctx context.Context, p *domain.Principal, in SendInput, rc
 		}
 		s.emit(ctx, uid, EventChatError, chatError{MessageID: msgID.String(), ErrorClass: class, Retryable: class == "" || class.Retryable() || class == agentapi.ErrInsufficientBalance || class == agentapi.ErrAuth,
 			ConnectionName: connection, Text: ErrorText(class, connection), Code: code})
-		// Kept for clients of PLT.HMR-0002.
+		// Kept for clients of HMR.CMN-0002.
 		s.emit(ctx, uid, events.AgentError, map[string]string{"messageId": msgID.String(), "code": firstNonEmpty(code, string(class)), "message": ErrorText(class, connection)})
 	}
 	persona, err := s.repo.Persona(ctx, uid)

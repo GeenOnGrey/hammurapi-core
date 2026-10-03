@@ -1,4 +1,4 @@
-// Package agent is the contract of the agent operator (PLT.HMR-0004 arch §3):
+// Package agent is the contract of the agent operator (HMR.CMN-0004 arch §3):
 // the internal API `agent:8090/v1` that api, worker and runner use to run Pi
 // sessions, its stream events, the scenarios and the classes of LLM errors.
 // The operator itself lives in agent/operator, the Pi adapter in agent/pi.
@@ -12,7 +12,7 @@ import (
 // Scenario is what the agent is doing (tech spec §1).
 type Scenario string
 
-// Scenarios of PLT.HMR-0004 §4.
+// Scenarios of HMR.CMN-0004 §4.
 const (
 	ScenarioChat             Scenario = "chat"
 	ScenarioIssueAnalysis    Scenario = "issue_analysis"

@@ -149,7 +149,7 @@ type PRInfo struct {
 	Mergeable *bool // nil: not known yet
 }
 
-// TreeEntry is a file of a repository tree (HMR.CMN-0005): its path, the git
+// TreeEntry is a file of a repository tree (FTR.HMR.CMN-0005): its path, the git
 // blob id, which changes exactly when the content does, and the size in bytes
 // (-1 when the provider does not report it in the tree).
 type TreeEntry struct {
@@ -180,7 +180,7 @@ type Provider interface {
 	DeleteBranch(ctx context.Context, token, branch string) error
 	GetFile(ctx context.Context, token, ref, path string) (*File, error)
 	ListFiles(ctx context.Context, token, ref, dir string) ([]string, error)
-	// Tree lists the files under dir at ref with their blob ids (HMR.CMN-0005).
+	// Tree lists the files under dir at ref with their blob ids (FTR.HMR.CMN-0005).
 	Tree(ctx context.Context, token, ref, dir string) ([]TreeEntry, error)
 	// Blob returns the content of a blob by its id.
 	Blob(ctx context.Context, token, sha string) ([]byte, error)

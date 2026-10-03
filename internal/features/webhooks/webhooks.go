@@ -128,7 +128,7 @@ type Processor struct {
 	botLogin string
 	// Skills rebuilds the agent skills snapshot on pushes to /agent/ (PLT.HMR-0004 arch §5).
 	Skills SkillsSync
-	// Specs updates the specification index on pushes to the default branch (HMR.CMN-0005 R17).
+	// Specs updates the specification index on pushes to the default branch (FTR.HMR.CMN-0005 R17).
 	Specs SpecPushes
 }
 

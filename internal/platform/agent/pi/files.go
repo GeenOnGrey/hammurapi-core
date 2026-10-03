@@ -1,4 +1,4 @@
-// Package pi is the adapter between the agent operator and Pi (PLT.HMR-0004
+// Package pi is the adapter between the agent operator and Pi (HMR.CMN-0004
 // arch §3.3–3.4): it writes a Pi agent directory per session, starts
 // `pi --mode rpc` through pkg/pirpc with a clean environment, translates Pi's
 // events into the operator's stream, classifies LLM errors and counts usage.

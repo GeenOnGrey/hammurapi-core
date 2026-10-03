@@ -1,5 +1,5 @@
 // Package cycledata is the shared data access of the closed development cycle
-// (PLT.HMR-0002): issues and Discovery, services, traceability, pull requests,
+// (HMR.CMN-0002): issues and Discovery, services, traceability, pull requests,
 // agent tasks, CI results, validation, releases, deploys, flags, settings and
 // activity. The state machines and several slices use the same rows, so the
 // repository takes any Querier — the pool or a workflow transaction.

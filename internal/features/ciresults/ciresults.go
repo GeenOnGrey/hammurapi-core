@@ -1,4 +1,4 @@
-// Package ciresults receives test results of service pipelines (PLT.HMR-0002
+// Package ciresults receives test results of service pipelines (HMR.CMN-0002
 // arch §9, tech §10): POST /hooks/v1/ci-results with a JUnit XML report, signed
 // with CI_RESULTS_SECRET. Tests are linked to test cases by the ID in the test
 // name or a property (QA-03), and the results reach the validation of the

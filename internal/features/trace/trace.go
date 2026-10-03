@@ -1,5 +1,5 @@
 // Package trace projects the traceability of a feature from its gate documents
-// in git (PLT.HMR-0002 R15, tech §15): requirements of the product spec, the
+// in git (HMR.CMN-0002 R15, tech §15): requirements of the product spec, the
 // services and their requirements of the tech spec, and the test cases of the
 // qa spec. It runs after every commit to these gates and after generation.
 package trace

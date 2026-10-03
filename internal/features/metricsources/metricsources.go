@@ -1,4 +1,4 @@
-// Package metricsources manages read-only metric sources (PLT.HMR-0002 arch
+// Package metricsources manages read-only metric sources (HMR.CMN-0002 arch
 // §14): administration, and the dry run of success-metric queries used by
 // Discovery verification (R6) and the agent.
 package metricsources

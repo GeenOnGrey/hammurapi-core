@@ -330,7 +330,7 @@ func TestRepositories(t *testing.T) {
 	if len(msgs) != 1 || len(msgs[0].Attachments) != 1 || !msgs[0].IsVoice {
 		t.Fatalf("history %+v", msgs)
 	}
-	// PLT.HMR-0004: one active Pi session per user; the snapshot key survives.
+	// HMR.CMN-0004: one active Pi session per user; the snapshot key survives.
 	s1, err := chat.OpenSession(ctx, u.ID)
 	must(t, err)
 	must(t, chat.SetSessionOperator(ctx, s1.ID, "op-1", "deepseek-v4-flash", "off", uuid.Nil))

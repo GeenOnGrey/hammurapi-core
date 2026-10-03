@@ -130,7 +130,7 @@ type Syncer struct {
 	Pool *pgxpool.Pool
 	Git  git.Provider
 	// CatalogChanged runs in the transaction of a synchronization: specifications
-	// waiting for a domain or a system get an extra check (HMR.CMN-0005 R6).
+	// waiting for a domain or a system get an extra check (FTR.HMR.CMN-0005 R6).
 	CatalogChanged func(ctx context.Context, q postgres.Querier) error
 	mu             sync.Mutex
 }

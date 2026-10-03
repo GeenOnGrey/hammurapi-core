@@ -107,7 +107,7 @@ type Config struct {
 	WorkflowLease         time.Duration
 	DiscoveryTimeout      time.Duration
 
-	// HMR.CMN-0005: the check of the specification repository and the navigator.
+	// FTR.HMR.CMN-0005: the check of the specification repository and the navigator.
 	SpecScanPushDebounce    time.Duration
 	SpecScanPushDebounceMax time.Duration
 	SpecScanMaxFileBytes    int64

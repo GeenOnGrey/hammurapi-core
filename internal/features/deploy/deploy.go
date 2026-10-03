@@ -1,5 +1,5 @@
 // Package deploy starts deploy pipelines and receives their results
-// (PLT.HMR-0002 R28, R40, arch §12): per-environment settings in the admin
+// (HMR.CMN-0002 R28, R40, arch §12): per-environment settings in the admin
 // panel with per-service overrides, the deploy.trigger effect, the signed
 // result webhook POST /hooks/v1/deploy and manual marks. Hammurapi does not
 // deploy itself: it starts the pipeline of the team and waits for the result.

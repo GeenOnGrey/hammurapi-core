@@ -362,7 +362,7 @@ type AgentSession struct {
 	Model        string `json:"model"`
 }
 
-// runAgent runs the task's prompt in the agent operator (PLT.HMR-0004 arch
+// runAgent runs the task's prompt in the agent operator (HMR.CMN-0004 arch
 // §4): the runner serves its working copy, asks api for a session and drives
 // it with the session token. The runner has no LLM keys; the operator has no
 // access to the repository. After an operator failure the task resumes once

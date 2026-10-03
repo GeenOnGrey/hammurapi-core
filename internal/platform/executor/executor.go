@@ -1,4 +1,4 @@
-// Package executor starts runner tasks (PLT.HMR-0002 arch §7.3):
+// Package executor starts runner tasks (HMR.CMN-0002 arch §7.3):
 //
 //	local  a subprocess `hammurapi runner --task <id>` of the worker, with a
 //	       working directory under RUNNER_WORKDIR (Docker Compose, development)

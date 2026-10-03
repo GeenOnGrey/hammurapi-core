@@ -159,7 +159,7 @@ func TestMigrationsRollback(t *testing.T) {
 	must(t, goose.UpContext(context.Background(), db, "."))
 }
 
-// HMR.CMN-0005 MIG-01, MIG-02, MIG-04, MIG-07: the index migrations on a
+// FTR.HMR.CMN-0005 MIG-01, MIG-02, MIG-04, MIG-07: the index migrations on a
 // schema with a feature; existing features get source = hammurapi; the rollback
 // removes tables and columns and keeps the 'indexed' enum value.
 func TestSpecIndexMigrations(t *testing.T) {

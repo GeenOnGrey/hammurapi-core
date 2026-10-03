@@ -36,7 +36,7 @@ type Focus struct {
 	// an LLM connection or an MCP server needs attention (PLT.HMR-0004 R21).
 	Agent []Item `json:"agent"`
 	// Spec is shown to global administrators: problems of indexing the
-	// specification repository (HMR.CMN-0005 R10).
+	// specification repository (FTR.HMR.CMN-0005 R10).
 	Spec []Item `json:"spec"`
 }
 

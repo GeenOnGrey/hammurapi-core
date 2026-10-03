@@ -44,7 +44,7 @@ var (
 	LLMCost = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "hammurapi_llm_cost_usd_total", Help: "LLM cost in US dollars by connection and model.",
 	}, []string{"connection", "model"})
-	// Index of the specification repository (HMR.CMN-0005 arch §11).
+	// Index of the specification repository (FTR.HMR.CMN-0005 arch §11).
 	SpecScanRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "hammurapi_spec_scan_runs_total", Help: "Checks of the specification repository by trigger and result.",
 	}, []string{"trigger", "result"})

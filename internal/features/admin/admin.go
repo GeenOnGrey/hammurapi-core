@@ -39,7 +39,7 @@ type User struct {
 }
 
 // RolesInput is the body of PUT /users/{id}/roles. There are no editor or
-// approver roles (PLT.HMR-0002): experts are assigned per domain.
+// approver roles (HMR.CMN-0002): experts are assigned per domain.
 type RolesInput struct {
 	GlobalAdmin bool          `json:"globalAdmin"`
 	AreaAdmin   []domain.Area `json:"areaAdmin"`

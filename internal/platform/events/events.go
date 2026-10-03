@@ -33,7 +33,7 @@ const (
 	ApprovalsChanged = "approvals.changed"
 	ImportProgress   = "import.progress"
 
-	// PLT.HMR-0002
+	// HMR.CMN-0002
 	IssueUpdated      = "issue.updated"
 	DiscoveryProgress = "discovery.progress"
 	FeatureUpdated    = "feature.updated"
