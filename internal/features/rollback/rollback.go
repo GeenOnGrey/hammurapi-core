@@ -1,4 +1,4 @@
-// Package rollback implements the rollback of a release (HMR.CMN-0002 R32–R34,
+// Package rollback implements the rollback of a release (FTR.HMR.CMN-0002 R32–R34,
 // arch §11.5): for every merged service PR in reverse order a revert PR from
 // the bot, its merge with the token of the expert who started the rollback and
 // a redeploy; then the feature flag is awaited off (Hammurapi never switches

@@ -29,7 +29,7 @@ func (s *Service) Routes(r chi.Router) {
 		httpx.JSON(w, http.StatusAccepted, res)
 		return nil
 	}))
-	// HMR.CMN-0004: repeat a failed message (ERR-08) and the model that answers (R11).
+	// FTR.HMR.CMN-0004: repeat a failed message (ERR-08) and the model that answers (R11).
 	r.Post("/chat/messages/{id}/retry", httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		p, err := httpx.MustPrincipal(r)
 		if err != nil {

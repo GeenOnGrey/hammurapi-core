@@ -1,5 +1,5 @@
 // Package metricsource runs success-metric queries against read-only sources
-// (HMR.CMN-0002 arch §14): ClickHouse (HTTP interface) and Prometheus or
+// (FTR.HMR.CMN-0002 arch §14): ClickHouse (HTTP interface) and Prometheus or
 // VictoriaMetrics. Queries are written by people and by the agent, so they
 // are validated before execution and run with limits.
 package metricsource

@@ -265,7 +265,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	deployAdmin := &deploy.Admin{Pool: c.pool, Secrets: c.secrets, Effects: deployEffects}
 	flagHook := &flags.Hook{Pool: c.pool, Secrets: c.secrets, Events: c.events}
 
-	// The agent operator (PLT.HMR-0004): the chat and the runner API open Pi
+	// The agent operator (FTR.HMR.CMN-0004): the chat and the runner API open Pi
 	// sessions there; the Agent section configures them.
 	operatorClient := &agentapi.Client{BaseURL: cfg.AgentAddr, Token: cfg.AgentServiceToken}
 	agentCfg := agentcfg.NewService(c.pool, c.box, operatorClient, c.events, c.s3, c.provider, tokens, branch)
@@ -371,7 +371,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 	return g.Wait()
 }
 
-// RunOperator serves the agent operator (PLT.HMR-0004 arch §3): the internal
+// RunOperator serves the agent operator (FTR.HMR.CMN-0004 arch §3): the internal
 // API on listenAddr and health and metrics on serviceAddr.
 func RunOperator(ctx context.Context, op *operator.Operator, listenAddr, serviceAddr string, piCommand []string) error {
 	ready := func(context.Context) error {

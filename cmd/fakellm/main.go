@@ -1,5 +1,5 @@
 // Command fakellm is a scripted OpenAI-compatible LLM endpoint for the demo
-// stack and smoke runs (HMR.CMN-0004): Hammurapi's real agent (Pi in the agent
+// stack and smoke runs (FTR.HMR.CMN-0004): Hammurapi's real agent (Pi in the agent
 // operator) talks to it like to DeepSeek. Prompts with the header
 // "[hammurapi:task=<name> …]" get scripted tool calls — Analysis
 // (save_discovery), tech/qa generation (submit_gate), code generation (Pi's

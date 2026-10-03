@@ -1,4 +1,4 @@
-// Package cicd starts deploy pipelines (HMR.CMN-0002 arch §12). Hammurapi does
+// Package cicd starts deploy pipelines (FTR.HMR.CMN-0002 arch §12). Hammurapi does
 // not deploy itself: it starts a pipeline and waits for the signed result
 // webhook POST /hooks/v1/deploy.
 //

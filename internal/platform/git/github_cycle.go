@@ -33,7 +33,7 @@ type cachedToken struct {
 	expires time.Time
 }
 
-// WithApp configures the GitHub App used as the bot (HMR.CMN-0002 arch §8).
+// WithApp configures the GitHub App used as the bot (FTR.HMR.CMN-0002 arch §8).
 func (g *GitHub) WithApp(appID, privateKeyPEM string) (*GitHub, error) {
 	if appID == "" || privateKeyPEM == "" {
 		return g, nil

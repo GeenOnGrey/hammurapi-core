@@ -55,7 +55,7 @@ type Config struct {
 	BotLogin         string // provider login of the bot (agent PRs, own review replies)
 	CIResultsSecret  []string
 
-	// Agent operator (PLT.HMR-0004 tech §12)
+	// Agent operator (FTR.HMR.CMN-0004 tech §12)
 	AgentAddr         string        // the operator as api and worker reach it
 	AgentRunnerURL    string        // the operator as runner pods reach it
 	AgentServiceToken string        // service token of the operator's internal API
@@ -91,7 +91,7 @@ type Config struct {
 	ImportMaxFiles             int
 	ImportAllowedAssetTypes    []string
 
-	// Runner (PLT.HMR-0002 arch §15)
+	// Runner (FTR.HMR.CMN-0002 arch §15)
 	RunnerExecutor        string // k8s | local
 	RunnerNamespace       string
 	RunnerImage           string
@@ -102,7 +102,7 @@ type Config struct {
 	RunnerWorkdir         string
 	RunnerCPU             string
 	RunnerMemory          string
-	RunnerWorkspacePort   int // the runner's workspace server (PLT.HMR-0004 arch §4.2)
+	RunnerWorkspacePort   int // the runner's workspace server (FTR.HMR.CMN-0004 arch §4.2)
 	WorkflowMaxAttempts   int
 	WorkflowLease         time.Duration
 	DiscoveryTimeout      time.Duration

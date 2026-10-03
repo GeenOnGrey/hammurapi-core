@@ -372,7 +372,7 @@ func ReadyForCodegen(f *specdata.Feature, gates []specdata.Gate) bool {
 	return !f.ApprovalRequired || specdata.AllApproved(gates)
 }
 
-// PermissionsOf computes the actions available to the principal (PLT.HMR-0002 §5).
+// PermissionsOf computes the actions available to the principal (FTR.HMR.CMN-0002 §5).
 func PermissionsOf(p *domain.Principal, f *specdata.Feature, gates []specdata.Gate) Permissions {
 	perm := Permissions{Edit: []domain.Area{}, Submit: []domain.Area{}, Approve: []domain.Area{}, DeleteGate: []domain.Area{}, AddGate: []domain.Area{}}
 	expert := p.IsExpertOf(f.DomainKey)

@@ -1,5 +1,5 @@
 // Package catalog projects the Backstage catalog (catalog-info.yaml in git) onto
-// domains, systems and services (PLT.HMR-0002 R10–R11, arch §10): Domain and
+// domains, systems and services (FTR.HMR.CMN-0002 R10–R11, arch §10): Domain and
 // System entities from the catalog repository (glob), Component entities from
 // the service repositories; owners resolved from spec.owner (user:<login> or
 // group:<name> of the provider). Entities that cannot be mapped go to

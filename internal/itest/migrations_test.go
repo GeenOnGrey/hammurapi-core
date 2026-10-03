@@ -52,7 +52,7 @@ func columns(t *testing.T, db *sql.DB, table string) map[string]bool {
 }
 
 // seedMVP fills the MVP schema (version 1) with a user, chat messages, an
-// attachment of a message and usage of PLT.HMR-0002.
+// attachment of a message and usage of FTR.HMR.CMN-0002.
 func seedMVP(t *testing.T, db *sql.DB, messages int) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO users (id, provider_uid, username, display_name, agent_name, agent_tone) VALUES ('00000000-0000-0000-0000-000000000001', '1', 'anna', 'Anna', 'Hammurapi', 'business')`)
@@ -126,7 +126,7 @@ func TestMigrationsFromMVP(t *testing.T) {
 	}
 }
 
-// MIG-03: without agent_usage (a schema before PLT.HMR-0002) the table is created.
+// MIG-03: without agent_usage (a schema before FTR.HMR.CMN-0002) the table is created.
 func TestAgentUsageCreatedWhenMissing(t *testing.T) {
 	db := migDB(t, 4)
 	_, err := db.Exec(`DROP TABLE agent_usage`)

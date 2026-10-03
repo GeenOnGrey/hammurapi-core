@@ -1,4 +1,4 @@
-// Package overview serves the "General" section (PLT.HMR-0002 R37): "In focus"
+// Package overview serves the "General" section (FTR.HMR.CMN-0002 R37): "In focus"
 // — what waits for the user's decision now, by stage, longest waiting first —
 // and "Overview" — all active issues, features and releases in three columns.
 package overview
@@ -33,7 +33,7 @@ type Focus struct {
 	Development []Item `json:"development"`
 	Release     []Item `json:"release"`
 	// Agent is shown to global administrators: the agent is not configured,
-	// an LLM connection or an MCP server needs attention (PLT.HMR-0004 R21).
+	// an LLM connection or an MCP server needs attention (FTR.HMR.CMN-0004 R21).
 	Agent []Item `json:"agent"`
 	// Spec is shown to global administrators: problems of indexing the
 	// specification repository (FTR.HMR.CMN-0005 R10).

@@ -1,5 +1,5 @@
-// Package agentrun runs one-off agent sessions of the worker (HMR.CMN-0002
-// arch §6, HMR.CMN-0004 arch §3): Analysis of issues, generation of tech and
+// Package agentrun runs one-off agent sessions of the worker (FTR.HMR.CMN-0002
+// arch §6, FTR.HMR.CMN-0004 arch §3): Analysis of issues, generation of tech and
 // qa, and the code check. Every session gets its own MCP token whose grant
 // limits the tools and the objects; structured results come back through the
 // grant's sink. The model of the scenario is fixed when the session opens.
@@ -56,10 +56,10 @@ type Outcome struct {
 	Results map[string][]json.RawMessage
 }
 
-// TokensIn is kept for callers of HMR.CMN-0002.
+// TokensIn is kept for callers of FTR.HMR.CMN-0002.
 func (o Outcome) TokensIn() int64 { return o.Usage.TokensIn + o.Usage.CacheRead }
 
-// TokensOut is kept for callers of HMR.CMN-0002.
+// TokensOut is kept for callers of FTR.HMR.CMN-0002.
 func (o Outcome) TokensOut() int64 { return o.Usage.TokensOut }
 
 // Last returns the last result of a kind.

@@ -1,4 +1,4 @@
-// Package gategen generates the tech and qa gates with the agent (HMR.CMN-0002
+// Package gategen generates the tech and qa gates with the agent (FTR.HMR.CMN-0002
 // R12–R14): the gate_generation workflow (queued → generating → done ·
 // blocked), the agent effect that writes the documents and commits them to the
 // feature branch, and the Generator used by approvals and "regenerate".

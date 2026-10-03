@@ -1,4 +1,4 @@
-// Package discovery implements Discovery of issues (PLT.HMR-0002 R4–R6): the
+// Package discovery implements Discovery of issues (FTR.HMR.CMN-0002 R4–R6): the
 // discovery workflow (queued → running → done · blocked), the agent effect that
 // researches the issue, the Discovery document endpoints and its edits from the
 // chat. The document lives in Postgres until the issue is accepted.

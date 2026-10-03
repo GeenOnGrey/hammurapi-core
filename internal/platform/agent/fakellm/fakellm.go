@@ -1,5 +1,5 @@
 // Package fakellm is a scripted OpenAI-compatible chat completions endpoint
-// for tests and the demo stack (HMR.CMN-0004 qa §1). The model id selects the
+// for tests and the demo stack (FTR.HMR.CMN-0004 qa §1). The model id selects the
 // behaviour; a Script can answer with tool calls. It is not an LLM; never use
 // it in production.
 //

@@ -1,5 +1,5 @@
 // Package runner implements agent tasks in an isolated environment
-// (HMR.CMN-0002 arch §7): the internal API on :8081 that runner processes
+// (FTR.HMR.CMN-0002 arch §7): the internal API on :8081 that runner processes
 // talk to with a one-time task token, and the runner mode itself
 // (`hammurapi runner --task <id>`): check out the service repository through
 // the provider API, run the agent with files and terminal confined to the
@@ -73,7 +73,7 @@ type Result struct {
 	Error        string   `json:"error,omitempty"`
 	TokensIn     int64    `json:"tokensIn"`
 	TokensOut    int64    `json:"tokensOut"`
-	// Usage is the exact usage reported by the agent operator (HMR.CMN-0004 R19).
+	// Usage is the exact usage reported by the agent operator (FTR.HMR.CMN-0004 R19).
 	Usage agent.Usage `json:"usage"`
 }
 
@@ -96,7 +96,7 @@ type Internal struct {
 	Timeout    time.Duration
 	TokenLimit int64
 
-	// HMR.CMN-0004: runners use the agent operator as an external service.
+	// FTR.HMR.CMN-0004: runners use the agent operator as an external service.
 	Operator AgentOperator
 	Config   AgentConfig
 	// AgentURL is the operator's address as runner pods reach it.
@@ -116,7 +116,7 @@ type AgentConfig interface {
 	RecordUsage(ctx context.Context, r agentcfg.UsageRecord) error
 }
 
-// ScenarioOf maps a runner task type to its agent scenario (HMR.CMN-0004 §4).
+// ScenarioOf maps a runner task type to its agent scenario (FTR.HMR.CMN-0004 §4).
 func ScenarioOf(taskType string) agent.Scenario {
 	switch taskType {
 	case codegen.TaskReview, codegen.TaskUpdatePR:
@@ -398,7 +398,7 @@ func (s *Internal) result(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// agentSession opens the agent session of a task in the operator (HMR.CMN-0004
+// agentSession opens the agent session of a task in the operator (FTR.HMR.CMN-0004
 // tech §5): api resolves the scenario's model, decrypts the keys and passes
 // the runner's workspace; the runner gets only the operator's address and the
 // session token. A task may resume once after an operator failure (RUN-07).

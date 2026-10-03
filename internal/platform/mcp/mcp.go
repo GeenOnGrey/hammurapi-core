@@ -24,7 +24,7 @@ import (
 // ProtocolVersion is the MCP revision implemented.
 const ProtocolVersion = "2025-06-18"
 
-// Chat modes and agent contexts (PLT.HMR-0002 arch §6). The mode selects
+// Chat modes and agent contexts (FTR.HMR.CMN-0002 arch §6). The mode selects
 // which tools are offered.
 const (
 	ModeGeneral   = "general"   // chat: questions across all specifications

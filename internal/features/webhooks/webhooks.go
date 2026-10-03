@@ -1,6 +1,6 @@
 // Package webhooks receives git provider events (api) from the specification
 // repository, the service repositories and the catalog files, and applies them
-// in the worker (PLT.HMR-0002 arch §9):
+// in the worker (FTR.HMR.CMN-0002 arch §9):
 //
 //   - specification repository: pushes are projected onto gates (git is the
 //     source of truth: an unknown commit touching a gate folder is an edit and
@@ -126,7 +126,7 @@ type Processor struct {
 	catalog  Catalog
 	reviews  Reviews
 	botLogin string
-	// Skills rebuilds the agent skills snapshot on pushes to /agent/ (PLT.HMR-0004 arch §5).
+	// Skills rebuilds the agent skills snapshot on pushes to /agent/ (FTR.HMR.CMN-0004 arch §5).
 	Skills SkillsSync
 	// Specs updates the specification index on pushes to the default branch (FTR.HMR.CMN-0005 R17).
 	Specs SpecPushes

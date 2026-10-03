@@ -38,7 +38,7 @@ func (a Area) Index() int {
 // Valid reports whether a is a known area.
 func (a Area) Valid() bool { return a.Index() >= 0 }
 
-// Generated reports whether the agent writes the gate (tech and qa, PLT.HMR-0002 R12–R14).
+// Generated reports whether the agent writes the gate (tech and qa, FTR.HMR.CMN-0002 R12–R14).
 func (a Area) Generated() bool { return a == AreaTech || a == AreaQA }
 
 // ApproverKind is the expert kind that approves the area: product and design
@@ -251,7 +251,7 @@ func ParseReleaseKey(s string) (domainKey, systemKey string, n int, ok bool) {
 
 // Principal is the authenticated user with their roles, loaded per request.
 //
-// Roles (PLT.HMR-0002 §5): product and technical experts per domain, owners
+// Roles (FTR.HMR.CMN-0002 §5): product and technical experts per domain, owners
 // of services, area administrators, global administrator. Everybody reads
 // everything and can create issues.
 type Principal struct {

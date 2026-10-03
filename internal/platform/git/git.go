@@ -201,7 +201,7 @@ type Provider interface {
 	// ParseHook normalizes push, tag, PR/MR, review and comment webhooks; nil for others.
 	ParseHook(h http.Header, body []byte) (*HookEvent, error)
 
-	// ─── PLT.HMR-0002: service repositories, bot, CI/CD ───
+	// ─── FTR.HMR.CMN-0002: service repositories, bot, CI/CD ───
 
 	// Repo returns the repository this provider is bound to (owner/name).
 	Repo() string
@@ -248,7 +248,7 @@ type Trailers struct {
 	Agent   bool
 	Import  string
 	Delete  string
-	// PLT.HMR-0002
+	// FTR.HMR.CMN-0002
 	Req       []string
 	Initiator string
 	Task      string

@@ -1,4 +1,4 @@
-// Package flags receives feature flag events (HMR.CMN-0002 R29): the universal
+// Package flags receives feature flag events (FTR.HMR.CMN-0002 R29): the universal
 // signed webhook POST /hooks/v1/feature-flags with a published contract, and
 // the rotation of its secret. Only production events change release steps;
 // Hammurapi never switches flags itself.

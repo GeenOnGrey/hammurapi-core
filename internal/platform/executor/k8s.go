@@ -20,7 +20,7 @@ type K8sConfig struct {
 	Image          string
 	Timeout        time.Duration
 	CPU, Memory    string   // limits, e.g. "2", "4Gi"
-	Env            []string // extra non-secret settings, KEY=VALUE (no LLM keys: HMR.CMN-0004)
+	Env            []string // extra non-secret settings, KEY=VALUE (no LLM keys: FTR.HMR.CMN-0004)
 	WorkspacePort  int      // the runner's workspace server, reached by the agent operator
 	APIServer      string   // defaults to https://kubernetes.default.svc
 	TokenFile      string   // defaults to the in-cluster service account token
@@ -90,7 +90,7 @@ func (k *K8s) Manifest(t Task) map[string]any {
 		{"name": "HAMMURAPI_WORKDIR", "value": "/work"},
 		{"name": "TRACEPARENT", "value": t.TraceParent},
 		{"name": "HOME", "value": "/work"},
-		// The agent operator reaches the workspace server on the pod IP (HMR.CMN-0004 arch §4.2).
+		// The agent operator reaches the workspace server on the pod IP (FTR.HMR.CMN-0004 arch §4.2).
 		{"name": "HAMMURAPI_WORKSPACE_HOST", "valueFrom": map[string]any{"fieldRef": map[string]string{"fieldPath": "status.podIP"}}},
 		{"name": "HAMMURAPI_WORKSPACE_ADDR", "value": fmt.Sprintf(":%d", k.workspacePort())},
 	}

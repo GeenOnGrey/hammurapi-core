@@ -1,5 +1,5 @@
 // Package validation implements validation of a feature before anything is
-// merged (HMR.CMN-0002 R22–R25): the validation workflow (waiting_ci →
+// merged (FTR.HMR.CMN-0002 R22–R25): the validation workflow (waiting_ci →
 // waiting_stage_deploy → awaiting_signatures → done), the summary — CI results
 // by test case, requirement coverage, discrepancies found by the agent,
 // reviews, stage — the product and technical signatures, returns to code or

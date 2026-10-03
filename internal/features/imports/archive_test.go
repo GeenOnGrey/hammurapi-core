@@ -52,9 +52,9 @@ func code(err error) string {
 func TestParseFeatureWithFiveAreas(t *testing.T) {
 	var es []entry
 	for _, a := range []string{"product", "design", "arch", "tech", "qa"} {
-		es = append(es, entry{name: "specs/PLT/HMR/HMR.CMN-0001/" + a + "/spec.md", content: "# Hammurapi\n"})
+		es = append(es, entry{name: "specs/HMR/CMN/FTR.HMR.CMN-0001/" + a + "/spec.md", content: "# Hammurapi\n"})
 	}
-	es = append(es, entry{name: "specs/PLT/HMR/HMR.CMN-0001/design/logo.png", content: "\x89PNG\r\n\x1a\n"})
+	es = append(es, entry{name: "specs/HMR/CMN/FTR.HMR.CMN-0001/design/logo.png", content: "\x89PNG\r\n\x1a\n"})
 	a, err := ParseArchive(makeZip(t, es...), lim)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestParseFeatureWithFiveAreas(t *testing.T) {
 		t.Fatalf("features = %d", len(a.Features))
 	}
 	f := a.Features[0]
-	if f.ArchiveID != "HMR.CMN-0001" || f.Domain != "PLT" || f.System != "HMR" {
+	if f.ArchiveID != "FTR.HMR.CMN-0001" || f.Domain != "HMR" || f.System != "CMN" {
 		t.Fatalf("unexpected feature %+v", f)
 	}
 	if got := strings.Join(f.Areas(), ","); got != "arch,design,product,qa,tech" {

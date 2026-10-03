@@ -1,4 +1,4 @@
-// Package agentcfg is the Agent section of the administration (HMR.CMN-0004
+// Package agentcfg is the Agent section of the administration (FTR.HMR.CMN-0004
 // R5–R21): LLM connections, the model of every scenario, MCP servers, skills
 // (through PRs to the specification repository), usage and the audit log. It
 // also resolves, for a scenario, everything a Pi session needs: the model, the

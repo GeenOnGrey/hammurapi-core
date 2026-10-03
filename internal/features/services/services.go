@@ -1,4 +1,4 @@
-// Package services serves the service catalog (HMR.CMN-0002 R10, R11, R17):
+// Package services serves the service catalog (FTR.HMR.CMN-0002 R10, R11, R17):
 // the list with owners and autonomy, the autonomy level set by service owners,
 // and the manual catalog in the admin panel when Backstage is not used.
 package services

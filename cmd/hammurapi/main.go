@@ -1,5 +1,5 @@
 // Command hammurapi is the single Hammurapi binary. The first argument selects
-// the mode: api, worker, agent (the agent operator, HMR.CMN-0004), cleaner,
+// the mode: api, worker, agent (the agent operator, FTR.HMR.CMN-0004), cleaner,
 // migrate or runner (one agent task; started by the worker's executor).
 package main
 
@@ -130,7 +130,7 @@ func envOr(k, def string) string {
 	return def
 }
 
-// runOperator runs the agent operator (HMR.CMN-0004 arch §3). Its
+// runOperator runs the agent operator (FTR.HMR.CMN-0004 arch §3). Its
 // configuration comes from its own environment only: the pod has no database,
 // Kafka, object storage or Hammurapi secrets.
 func runOperator(ctx context.Context) error {

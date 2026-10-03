@@ -23,7 +23,7 @@ type Message struct {
 	Content     string          `json:"content"`
 	IsVoice     bool            `json:"isVoice"`
 	Attachments []AttachmentRef `json:"attachments"`
-	// HMR.CMN-0004: the model of an answer, the error class of a failed
+	// FTR.HMR.CMN-0004: the model of an answer, the error class of a failed
 	// user message and the message a retry repeats.
 	Model      *string    `json:"model"`
 	ErrorClass *string    `json:"errorClass"`

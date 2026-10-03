@@ -25,7 +25,7 @@ import (
 )
 
 // Workspace serves the working copy of a task to the agent operator
-// (HMR.CMN-0004 arch §4.2): file operations, search and shell commands, all
+// (FTR.HMR.CMN-0004 arch §4.2): file operations, search and shell commands, all
 // confined to the checkout. The hammurapi-workspace extension of Pi calls it
 // in place of the built-in tools, so the model works with Pi's own read,
 // write, edit, bash, grep, find and ls.

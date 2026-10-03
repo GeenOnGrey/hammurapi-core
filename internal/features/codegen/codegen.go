@@ -1,4 +1,4 @@
-// Package codegen implements code generation (HMR.CMN-0002 R16–R21): starting
+// Package codegen implements code generation (FTR.HMR.CMN-0002 R16–R21): starting
 // it when the gates are approved, the codegen workflow that splits the feature
 // into runner tasks per service (planning → tasks_running → done · blocked),
 // the codegen_task workflow of one runner task, the Implementation tab and

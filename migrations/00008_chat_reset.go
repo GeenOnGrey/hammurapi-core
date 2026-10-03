@@ -7,7 +7,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// 00008 (HMR.CMN-0004, arch §10 "+7"): the chat history accumulated with the
+// 00008 (FTR.HMR.CMN-0004, arch §10 "+7"): the chat history accumulated with the
 // previous agent is not carried over to Pi. Messages are deleted in batches
 // without one long transaction; attachment links are set to NULL by the
 // existing foreign key, and the cleaner removes attachment files without

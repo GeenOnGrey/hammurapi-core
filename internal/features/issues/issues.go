@@ -1,4 +1,4 @@
-// Package issues implements issues — Ideas and Problems (HMR.CMN-0002 R1–R9):
+// Package issues implements issues — Ideas and Problems (FTR.HMR.CMN-0002 R1–R9):
 // creation (which starts Discovery), the Research list, the issue card,
 // verification actions (accept, reject, merge, move, reopen) and the keys
 // ISS.<DOMAIN>-NNNN with old keys kept after a move.

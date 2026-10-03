@@ -25,7 +25,7 @@ var (
 	KafkaLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "hammurapi_kafka_consumer_lag", Help: "Kafka consumer lag by topic.",
 	}, []string{"topic"})
-	// Agent operator and LLM use (PLT.HMR-0004 arch §12).
+	// Agent operator and LLM use (FTR.HMR.CMN-0004 arch §12).
 	AgentSessions = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "hammurapi_agent_sessions_active", Help: "Active Pi sessions of the agent operator by kind.",
 	}, []string{"kind"})
@@ -69,7 +69,7 @@ var (
 	}, []string{"area", "to"})
 )
 
-// PLT.HMR-0002
+// FTR.HMR.CMN-0002
 var (
 	WorkflowRuns = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "hammurapi_workflow_runs", Help: "Active workflow runs by kind and state.",

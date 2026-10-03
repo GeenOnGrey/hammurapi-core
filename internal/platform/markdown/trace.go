@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Traceability parsers (HMR.CMN-0002 R15): requirements of the product spec,
+// Traceability parsers (FTR.HMR.CMN-0002 R15): requirements of the product spec,
 // test cases of the qa spec, services of the tech spec and the rollout order
 // of the arch spec. They follow the structure of the rules templates; when a
 // document does not match, callers fall back to the agent.

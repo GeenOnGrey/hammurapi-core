@@ -1,4 +1,4 @@
-// Package workflows is the engine of long-running processes (HMR.CMN-0002 arch §5):
+// Package workflows is the engine of long-running processes (FTR.HMR.CMN-0002 arch §5):
 // state machines persisted in Postgres with a transactional outbox.
 //
 //   - A run (workflow_runs) belongs to a subject (issue, feature, task, release)
@@ -611,7 +611,7 @@ func derefErr(s *string) string {
 }
 
 // PermanentError is an effect failure that retrying cannot fix (for example
-// an LLM connection without balance, HMR.CMN-0004 R20): the run gets
+// an LLM connection without balance, FTR.HMR.CMN-0004 R20): the run gets
 // effect_failed at once instead of after WORKFLOW_MAX_ATTEMPTS.
 type PermanentError struct{ Err error }
 

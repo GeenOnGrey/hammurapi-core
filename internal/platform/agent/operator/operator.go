@@ -1,5 +1,5 @@
 // Package operator is the agent operator — the `hammurapi agent` mode
-// (HMR.CMN-0004 arch §3). It runs one Pi process per session behind the
+// (FTR.HMR.CMN-0004 arch §3). It runs one Pi process per session behind the
 // internal API agent:8090/v1. The pod has no database, Kafka, object storage
 // or Hammurapi secrets: everything a session needs comes in the request.
 package operator
