@@ -184,6 +184,22 @@ type Service struct {
 	pool   *pgxpool.Pool
 	repo   *Repository
 	events events.Publisher
+	// CatalogChanged runs in the transaction that adds a domain or a system:
+	// specifications waiting for it get an extra check (FTR.HMR.CMN-0005 R6).
+	CatalogChanged func(ctx context.Context, q postgres.Querier) error
+}
+
+// added runs the insert and the catalog hook in one transaction.
+func (s *Service) added(ctx context.Context, insert func(q postgres.Querier) error) error {
+	return postgres.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := insert(tx); err != nil {
+			return err
+		}
+		if s.CatalogChanged != nil {
+			return s.CatalogChanged(ctx, tx)
+		}
+		return nil
+	})
 }
 
 // NewService creates the service.
@@ -212,7 +228,10 @@ func (s *Service) CreateDomain(ctx context.Context, p *domain.Principal, key, na
 	if err := RequireManual(ctx, s.repo.q); err != nil {
 		return err
 	}
-	_, err := s.repo.q.Exec(ctx, `INSERT INTO domains (key, name, approval_required) VALUES ($1,$2,$3)`, key, strings.TrimSpace(name), approvalRequired)
+	err := s.added(ctx, func(q postgres.Querier) error {
+		_, err := q.Exec(ctx, `INSERT INTO domains (key, name, approval_required) VALUES ($1,$2,$3)`, key, strings.TrimSpace(name), approvalRequired)
+		return err
+	})
 	if postgres.IsUniqueViolation(err) {
 		return apperr.Conflict("key_exists", "a domain with this key already exists")
 	}
@@ -276,18 +295,18 @@ func (s *Service) CreateSystem(ctx context.Context, p *domain.Principal, domainK
 	if strings.TrimSpace(name) == "" {
 		return apperr.Unprocessable("invalid_name", "name is required")
 	}
-	tag, err := s.repo.q.Exec(ctx, `INSERT INTO systems (domain_id, key, name) SELECT id, $2, $3 FROM domains WHERE key = $1`,
-		domainKey, key, strings.TrimSpace(name))
+	err := s.added(ctx, func(q postgres.Querier) error {
+		tag, err := q.Exec(ctx, `INSERT INTO systems (domain_id, key, name) SELECT id, $2, $3 FROM domains WHERE key = $1`,
+			domainKey, key, strings.TrimSpace(name))
+		if err == nil && tag.RowsAffected() == 0 {
+			return apperr.NotFound("domain_not_found", "domain not found")
+		}
+		return err
+	})
 	if postgres.IsUniqueViolation(err) {
 		return apperr.Conflict("key_exists", "a system with this key already exists in the domain")
 	}
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return apperr.NotFound("domain_not_found", "domain not found")
-	}
-	return nil
+	return err
 }
 
 // PatchSystem renames a system.

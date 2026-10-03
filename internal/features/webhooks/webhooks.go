@@ -128,6 +128,13 @@ type Processor struct {
 	botLogin string
 	// Skills rebuilds the agent skills snapshot on pushes to /agent/ (PLT.HMR-0004 arch §5).
 	Skills SkillsSync
+	// Specs updates the specification index on pushes to the default branch (HMR.CMN-0005 R17).
+	Specs SpecPushes
+}
+
+// SpecPushes is the specification index as the push processor uses it.
+type SpecPushes interface {
+	SpecsPushed(ctx context.Context, push *git.PushEvent) error
 }
 
 // SkillsSync is the Agent section as the push processor uses it.
@@ -178,6 +185,11 @@ func (p *Processor) Dispatch(ctx context.Context, ev *git.HookEvent) error {
 				}
 				if err := p.Skills.SkillsChanged(ctx, push.Branch, paths); err != nil {
 					slog.ErrorContext(ctx, "agent skills snapshot", "err", err)
+				}
+			}
+			if p.Specs != nil {
+				if err := p.Specs.SpecsPushed(ctx, push); err != nil {
+					slog.ErrorContext(ctx, "specification index", "err", err) // the scheduled check catches up
 				}
 			}
 		} else if err := p.servicePush(ctx, push); err != nil {

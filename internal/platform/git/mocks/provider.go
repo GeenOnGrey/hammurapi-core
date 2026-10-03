@@ -71,6 +71,21 @@ func (mr *MockProviderMockRecorder) AuthCodeURL(state, redirectURL any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthCodeURL", reflect.TypeOf((*MockProvider)(nil).AuthCodeURL), state, redirectURL)
 }
 
+// Blob mocks base method.
+func (m *MockProvider) Blob(ctx context.Context, token, sha string) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Blob", ctx, token, sha)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Blob indicates an expected call of Blob.
+func (mr *MockProviderMockRecorder) Blob(ctx, token, sha any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Blob", reflect.TypeOf((*MockProvider)(nil).Blob), ctx, token, sha)
+}
+
 // BotToken mocks base method.
 func (m *MockProvider) BotToken(ctx context.Context) (string, error) {
 	m.ctrl.T.Helper()
@@ -525,6 +540,21 @@ func (m *MockProvider) SearchCode(ctx context.Context, token, query string) ([]g
 func (mr *MockProviderMockRecorder) SearchCode(ctx, token, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchCode", reflect.TypeOf((*MockProvider)(nil).SearchCode), ctx, token, query)
+}
+
+// Tree mocks base method.
+func (m *MockProvider) Tree(ctx context.Context, token, ref, dir string) ([]git.TreeEntry, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Tree", ctx, token, ref, dir)
+	ret0, _ := ret[0].([]git.TreeEntry)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Tree indicates an expected call of Tree.
+func (mr *MockProviderMockRecorder) Tree(ctx, token, ref, dir any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Tree", reflect.TypeOf((*MockProvider)(nil).Tree), ctx, token, ref, dir)
 }
 
 // UpdatePRBranch mocks base method.

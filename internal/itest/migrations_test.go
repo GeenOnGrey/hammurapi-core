@@ -121,7 +121,7 @@ func TestMigrationsFromMVP(t *testing.T) {
 	must(t, goose.UpContext(context.Background(), db, "."))
 	after, err := goose.GetDBVersion(db)
 	must(t, err)
-	if before != after || before != 8 {
+	if before != after || before != 13 {
 		t.Fatalf("version %d → %d", before, after)
 	}
 }
@@ -156,6 +156,54 @@ func TestMigrationsRollback(t *testing.T) {
 		t.Fatal("chat_messages columns left")
 	}
 	// And forward again.
+	must(t, goose.UpContext(context.Background(), db, "."))
+}
+
+// HMR.CMN-0005 MIG-01, MIG-02, MIG-04, MIG-07: the index migrations on a
+// schema with a feature; existing features get source = hammurapi; the rollback
+// removes tables and columns and keeps the 'indexed' enum value.
+func TestSpecIndexMigrations(t *testing.T) {
+	db := migDB(t, 8)
+	seedMVP(t, db, 1)
+	_, err := db.Exec(`WITH d AS (INSERT INTO domains (key, name) VALUES ('FMS', 'Fleet') RETURNING id),
+		s AS (INSERT INTO systems (domain_id, key, name) SELECT id, 'CAR', 'Cars' FROM d RETURNING id)
+		INSERT INTO features (unique_id, system_id, number, title, branch_name, pr_number, pr_url, created_by)
+		SELECT 'FTR.FMS.CAR-0001', id, 1, 'Booking', 'feature/FTR.FMS.CAR-0001', 1, 'u', '00000000-0000-0000-0000-000000000001' FROM s`)
+	must(t, err)
+	must(t, goose.UpContext(context.Background(), db, "."))
+	if n := count(t, db, `SELECT count(*) FROM features WHERE source = 'hammurapi' AND indexed_at IS NULL AND repo_deleted_at IS NULL`); n != 1 {
+		t.Fatalf("existing feature: %d", n)
+	}
+	if n := count(t, db, `SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'feature_phase' AND e.enumlabel = 'indexed'`); n != 1 {
+		t.Fatal("no 'indexed' phase")
+	}
+	if n := count(t, db, `SELECT count(*) FROM admin_settings WHERE key = 'spec_scan' AND value->>'interval' = '1h'`); n != 1 {
+		t.Fatal("no spec_scan setting")
+	}
+	for _, table := range []string{"spec_scan_runs", "spec_index_issues", "spec_documents", "spec_files", "spec_requirements", "spec_references"} {
+		if n := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_name = $1`, table); n != 1 {
+			t.Errorf("%s missing", table)
+		}
+	}
+	// One queued run at most.
+	_, err = db.Exec(`INSERT INTO spec_scan_runs (trigger) VALUES ('manual')`)
+	must(t, err)
+	if _, err := db.Exec(`INSERT INTO spec_scan_runs (trigger) VALUES ('schedule')`); err == nil {
+		t.Fatal("a second queued run was accepted")
+	}
+
+	must(t, goose.DownToContext(context.Background(), db, ".", 8))
+	for _, table := range []string{"spec_scan_runs", "spec_index_issues", "spec_documents", "spec_files", "spec_requirements", "spec_references"} {
+		if n := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_name = $1`, table); n != 0 {
+			t.Errorf("%s left after rollback", table)
+		}
+	}
+	if cols := columns(t, db, "features"); cols["source"] || cols["indexed_at"] || cols["repo_deleted_at"] {
+		t.Fatalf("features columns left: %v", cols)
+	}
+	if n := count(t, db, `SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE e.enumlabel = 'indexed'`); n != 1 {
+		t.Fatal("the enum value is kept on rollback")
+	}
 	must(t, goose.UpContext(context.Background(), db, "."))
 }
 

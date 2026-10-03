@@ -35,6 +35,9 @@ type Focus struct {
 	// Agent is shown to global administrators: the agent is not configured,
 	// an LLM connection or an MCP server needs attention (PLT.HMR-0004 R21).
 	Agent []Item `json:"agent"`
+	// Spec is shown to global administrators: problems of indexing the
+	// specification repository (HMR.CMN-0005 R10).
+	Spec []Item `json:"spec"`
 }
 
 // Service implements the General section.
@@ -42,6 +45,8 @@ type Service struct {
 	pool *pgxpool.Pool
 	// AgentFocus returns the Agent group; nil disables it.
 	AgentFocus func(ctx context.Context) ([]Item, error)
+	// SpecFocus returns the Specification group; nil disables it.
+	SpecFocus func(ctx context.Context) ([]Item, error)
 }
 
 // NewService creates the service.
@@ -70,13 +75,20 @@ const expertDomains = `(SELECT domain_id FROM domain_experts WHERE user_id = $1)
 // Focus builds "In focus" for the user (NAV-02).
 func (s *Service) Focus(ctx context.Context, p *domain.Principal) (*Focus, error) {
 	uid := p.UserID
-	f := &Focus{Research: []Item{}, Development: []Item{}, Release: []Item{}, Agent: []Item{}}
+	f := &Focus{Research: []Item{}, Development: []Item{}, Release: []Item{}, Agent: []Item{}, Spec: []Item{}}
 	if p.GlobalAdmin && s.AgentFocus != nil {
 		items, err := s.AgentFocus(ctx)
 		if err != nil {
 			return nil, err
 		}
 		f.Agent = append(f.Agent, items...)
+	}
+	if p.GlobalAdmin && s.SpecFocus != nil {
+		items, err := s.SpecFocus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		f.Spec = append(f.Spec, items...)
 	}
 	research, err := s.collect(ctx, `
 		SELECT 'issue', i.key, i.title, 'verify_discovery', i.updated_at, NULL::text

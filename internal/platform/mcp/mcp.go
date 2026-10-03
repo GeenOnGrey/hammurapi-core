@@ -73,8 +73,10 @@ type Tool struct {
 	Description string
 	InputSchema map[string]any
 	// Modes lists the chat modes in which the tool is offered.
-	Modes   []string
-	Handler func(ctx context.Context, g Grant, args json.RawMessage) (string, error)
+	Modes []string
+	// ReadOnly marks a tool that changes nothing (annotation readOnlyHint).
+	ReadOnly bool
+	Handler  func(ctx context.Context, g Grant, args json.RawMessage) (string, error)
 }
 
 func (t Tool) availableIn(mode string) bool {
@@ -220,7 +222,11 @@ func (s *Server) dispatch(ctx context.Context, g Grant, req request) (any, *rpcE
 		list := []map[string]any{}
 		for _, t := range s.tools {
 			if t.availableIn(g.Mode) {
-				list = append(list, map[string]any{"name": t.Name, "description": t.Description, "inputSchema": t.InputSchema})
+				item := map[string]any{"name": t.Name, "description": t.Description, "inputSchema": t.InputSchema}
+				if t.ReadOnly {
+					item["annotations"] = map[string]any{"readOnlyHint": true}
+				}
+				list = append(list, item)
 			}
 		}
 		return map[string]any{"tools": list}, nil

@@ -1,6 +1,6 @@
 /**
  * hammurapi-workspace — Pi's built-in file and shell tools, executed in the
- * runner task of Hammurapi (HMR.CMN-0004 arch §4.3).
+ * runner task of Hammurapi (FTR.HMR.CMN-0004 arch §4.3).
  *
  * The agent (Pi) runs in the agent operator; the repository checkout and the
  * commands live in an isolated runner pod. This extension keeps Pi's own read,

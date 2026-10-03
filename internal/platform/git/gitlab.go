@@ -143,6 +143,43 @@ func (g *GitLab) ListFiles(ctx context.Context, token, ref, dir string) ([]strin
 	return out, nil
 }
 
+// Tree lists files with their blob ids; GitLab does not report sizes in the
+// tree, so Size is -1.
+func (g *GitLab) Tree(ctx context.Context, token, ref, dir string) ([]TreeEntry, error) {
+	var out []TreeEntry
+	page := "1"
+	for page != "" {
+		q := url.Values{"ref": {ref}, "recursive": {"true"}, "per_page": {"100"}, "page": {page}}
+		if dir = strings.Trim(dir, "/"); dir != "" {
+			q.Set("path", dir)
+		}
+		var items []struct {
+			ID   string `json:"id"`
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		resp, err := g.api.call(ctx, "get_tree", token, http.MethodGet, g.p("/repository/tree?"+q.Encode()), nil, &items)
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil // no such directory
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			if it.Type == "blob" {
+				out = append(out, TreeEntry{Path: it.Path, SHA: it.ID, Size: -1})
+			}
+		}
+		page = resp.Header.Get("X-Next-Page")
+	}
+	return out, nil
+}
+
+// Blob returns the raw content of a blob.
+func (g *GitLab) Blob(ctx context.Context, token, sha string) ([]byte, error) {
+	return g.api.raw(ctx, "get_blob", token, g.p("/repository/blobs/"+url.PathEscape(sha)+"/raw"))
+}
+
 func (g *GitLab) fileExists(ctx context.Context, token, ref, path string) (bool, error) {
 	req := g.p("/repository/files/" + url.PathEscape(path) + "?ref=" + url.QueryEscape(ref))
 	_, err := g.api.call(ctx, "file_exists", token, http.MethodHead, req, nil, nil)

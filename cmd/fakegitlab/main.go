@@ -7,7 +7,7 @@
 // multi-file commits, merge requests (3-way merge, diffs, rebase, notes,
 // reviewers, approvals), merge base, tags, groups, pipelines, issues and code
 // search, and sends project webhooks back to Hammurapi (push, tag push, merge
-// request, note). For the closed cycle (PLT.HMR-0002) it also imitates CI —
+// request, note). For the closed cycle (FTR.HMR.CMN-0002) it also imitates CI —
 // JUnit results of merge request branches are posted to /hooks/v1/ci-results —
 // a deploy target and a Prometheus endpoint for metric dry runs.
 //
@@ -252,6 +252,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.Unlock()
 		w.WriteHeader(204)
+	case r.URL.Path == "/fake/push" && r.Method == http.MethodPost:
+		s.directPush(w, r)
 	case r.URL.Path == "/fake/deploy" && r.Method == http.MethodPost:
 		s.deployTarget(w, r)
 	case r.URL.Path == "/fake/prometheus/api/v1/query":
@@ -427,9 +429,9 @@ func (s *server) api(w http.ResponseWriter, r *http.Request, seg []string, login
 		}
 		prefix := strings.Trim(q.Get("path"), "/")
 		out := []map[string]string{}
-		for path := range c.Files {
+		for path, data := range c.Files {
 			if prefix == "" || strings.HasPrefix(path, prefix+"/") {
-				out = append(out, map[string]string{"path": path, "type": "blob", "name": filepath.Base(path)})
+				out = append(out, map[string]string{"id": blobID(data), "path": path, "type": "blob", "name": filepath.Base(path)})
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i]["path"] < out[j]["path"] })
@@ -437,6 +439,17 @@ func (s *server) api(w http.ResponseWriter, r *http.Request, seg []string, login
 			out = []map[string]string{}
 		}
 		writeJSON(w, 200, out)
+	case len(rest) == 4 && rest[0] == "repository" && rest[1] == "blobs" && rest[3] == "raw":
+		// Blobs are found by id in any commit (FTR.HMR.CMN-0005 index of documents).
+		for _, c := range s.commits {
+			for _, data := range c.Files {
+				if blobID(data) == rest[2] {
+					_, _ = w.Write(data)
+					return
+				}
+			}
+		}
+		fail(w, 404, "404 Blob Not Found")
 	case len(rest) == 2 && rest[0] == "repository" && rest[1] == "commits" && r.Method == http.MethodPost:
 		s.commit(w, r, p, login)
 	case len(rest) == 2 && rest[0] == "repository" && rest[1] == "commits" && r.Method == http.MethodGet:
@@ -747,6 +760,63 @@ func (s *server) merge(w http.ResponseWriter, p *project, m *mr, login string) {
 	writeJSON(w, 200, s.mrJSON(p, m))
 	s.mrHook(p, m, "merge", login)
 	go s.pushHook(p.path, m.Target, login, c, nil, nil, nil)
+}
+
+// directPush imitates a git push past Hammurapi (FTR.HMR.CMN-0005 demo): files are
+// committed straight to a branch and the push webhook is sent.
+func (s *server) directPush(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Project string            `json:"project"`
+		Branch  string            `json:"branch"`
+		Author  string            `json:"author"`
+		Message string            `json:"message"`
+		Files   map[string]string `json:"files"`
+		Delete  []string          `json:"delete"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		fail(w, 400, "invalid body")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projects[in.Project]
+	if p == nil {
+		fail(w, 404, "404 Project Not Found")
+		return
+	}
+	head := s.resolve(p, in.Branch)
+	if head == nil {
+		fail(w, 404, "404 Branch Not Found")
+		return
+	}
+	files := map[string][]byte{}
+	for k, v := range head.Files {
+		files[k] = v
+	}
+	var added, modified, removed []string
+	for path, content := range in.Files {
+		if _, ok := files[path]; ok {
+			modified = append(modified, path)
+		} else {
+			added = append(added, path)
+		}
+		files[path] = []byte(content)
+	}
+	for _, path := range in.Delete {
+		if _, ok := files[path]; ok {
+			delete(files, path)
+			removed = append(removed, path)
+		}
+	}
+	author := in.Author
+	if author == "" {
+		author = "admin"
+	}
+	c := &commit{ID: newID(), Parents: []string{head.ID}, Message: in.Message, Author: author, Time: time.Now(), Files: files}
+	s.commits[c.ID] = c
+	p.branches[in.Branch] = c.ID
+	writeJSON(w, 201, map[string]any{"id": c.ID})
+	go s.pushHook(p.path, in.Branch, author, c, added, modified, removed)
 }
 
 func (s *server) commit(w http.ResponseWriter, r *http.Request, p *project, login string) {

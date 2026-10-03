@@ -78,9 +78,10 @@ func specPath(f *specdata.Feature, area domain.Area) string {
 }
 
 // readRef is the feature branch until the release is confirmed; afterwards the
-// spec PR is merged, the branch may be gone and the content lives in the default branch.
+// spec PR is merged, the branch may be gone and the content lives in the default
+// branch. Indexed features (FTR.HMR.CMN-0005) live only there.
 func (s *Service) readRef(f *specdata.Feature) string {
-	if f.Phase == domain.PhaseReleased {
+	if f.Phase == domain.PhaseReleased || f.Phase == domain.PhaseIndexed {
 		return s.defaultBranch
 	}
 	return f.Branch

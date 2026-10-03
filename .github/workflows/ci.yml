@@ -28,7 +28,7 @@ jobs:
       - name: Интеграционные тесты (Postgres через dockertest)
         run: go test -tags integration -count=1 ./internal/itest/...
 
-  # Contract tests against a real Pi of PI_VERSION (HMR.CMN-0004 qa §1, level K):
+  # Contract tests against a real Pi of PI_VERSION (FTR.HMR.CMN-0004 qa §1, level K):
   # the RPC client, the adapter with a fake provider and the hammurapi-workspace
   # extension.
   pi-contract:

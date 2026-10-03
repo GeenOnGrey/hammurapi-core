@@ -157,6 +157,108 @@ func (g *GitHub) ListFiles(ctx context.Context, token, ref, dir string) ([]strin
 	return out, nil
 }
 
+type ghTreeItem struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+	Size int64  `json:"size"`
+}
+
+// Tree reads the recursive tree in one request; when GitHub truncates it (very
+// large repositories) it walks dir level by level instead.
+func (g *GitHub) Tree(ctx context.Context, token, ref, dir string) ([]TreeEntry, error) {
+	var t struct {
+		Tree      []ghTreeItem `json:"tree"`
+		Truncated bool         `json:"truncated"`
+	}
+	if _, err := g.api.call(ctx, "get_tree", token, http.MethodGet, g.r("/git/trees/"+pathEscapeSegments(ref)+"?recursive=1"), nil, &t); err != nil {
+		return nil, err
+	}
+	dir = strings.Trim(dir, "/")
+	if !t.Truncated {
+		var out []TreeEntry
+		for _, e := range t.Tree {
+			if e.Type == "blob" && (dir == "" || strings.HasPrefix(e.Path, dir+"/")) {
+				out = append(out, TreeEntry{Path: e.Path, SHA: e.SHA, Size: e.Size})
+			}
+		}
+		return out, nil
+	}
+	// Truncated: find the tree of dir from the root, then walk it.
+	sha := ref
+	if dir != "" {
+		cur := ref
+		for _, part := range strings.Split(dir, "/") {
+			items, err := g.treeLevel(ctx, token, cur)
+			if err != nil {
+				return nil, err
+			}
+			next := ""
+			for _, it := range items {
+				if it.Type == "tree" && it.Path == part {
+					next = it.SHA
+				}
+			}
+			if next == "" {
+				return nil, nil // no such directory
+			}
+			cur = next
+		}
+		sha = cur
+	}
+	var out []TreeEntry
+	var walk func(sha, prefix string) error
+	walk = func(sha, prefix string) error {
+		items, err := g.treeLevel(ctx, token, sha)
+		if err != nil {
+			return err
+		}
+		for _, it := range items {
+			p := it.Path
+			if prefix != "" {
+				p = prefix + "/" + it.Path
+			}
+			switch it.Type {
+			case "blob":
+				out = append(out, TreeEntry{Path: p, SHA: it.SHA, Size: it.Size})
+			case "tree":
+				if err := walk(it.SHA, p); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return out, walk(sha, dir)
+}
+
+func (g *GitHub) treeLevel(ctx context.Context, token, sha string) ([]ghTreeItem, error) {
+	var t struct {
+		Tree []ghTreeItem `json:"tree"`
+	}
+	_, err := g.api.call(ctx, "get_tree", token, http.MethodGet, g.r("/git/trees/"+pathEscapeSegments(sha)), nil, &t)
+	return t.Tree, err
+}
+
+// Blob returns the content of a blob.
+func (g *GitHub) Blob(ctx context.Context, token, sha string) ([]byte, error) {
+	var b struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if _, err := g.api.call(ctx, "get_blob", token, http.MethodGet, g.r("/git/blobs/"+url.PathEscape(sha)), nil, &b); err != nil {
+		return nil, err
+	}
+	if b.Encoding == "utf-8" {
+		return []byte(b.Content), nil
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(b.Content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("github: decode blob: %w", err)
+	}
+	return data, nil
+}
+
 // Commit creates a single commit via the git data API: blobs → tree → commit → ref.
 func (g *GitHub) Commit(ctx context.Context, token, branch, message string, changes []FileChange) (string, error) {
 	head, err := g.BranchHead(ctx, token, branch)

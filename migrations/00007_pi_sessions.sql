@@ -1,4 +1,4 @@
--- HMR.CMN-0004: Pi sessions in the agent operator — a user's chat or a runner
+-- FTR.HMR.CMN-0004: Pi sessions in the agent operator — a user's chat or a runner
 -- task — with the key of the saved Pi session file. The MVP table
 -- agent_sessions (ACP session ids) stays until the contract migration of the
 -- next release.

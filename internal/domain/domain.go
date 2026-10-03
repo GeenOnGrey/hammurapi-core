@@ -86,6 +86,9 @@ const (
 	PhaseReleased   FeaturePhase = "released"
 	PhaseRolledBack FeaturePhase = "rolled_back"
 	PhaseDeleted    FeaturePhase = "deleted"
+	// PhaseIndexed: found in the default branch of the repository and indexed
+	// as implemented, without gates (HMR.CMN-0005 R4).
+	PhaseIndexed FeaturePhase = "indexed"
 )
 
 // Active reports whether the feature is still in development (before a release exists).

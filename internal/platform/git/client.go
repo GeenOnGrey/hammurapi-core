@@ -83,6 +83,44 @@ func (c *apiClient) call(ctx context.Context, op, token, method, path string, bo
 	return resp, nil
 }
 
+// raw performs a GET and returns the body as is (blobs, up to 64 MB).
+func (c *apiClient) raw(ctx context.Context, op, token, path string) ([]byte, error) {
+	u := path
+	if !strings.HasPrefix(path, "http") {
+		u = c.baseAPI + path
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		k, v := c.authHeader(token)
+		req.Header.Set(k, v)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.fail(op)
+		return nil, fmt.Errorf("%s %s: %w", c.provider, op, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", c.provider, op, err)
+	}
+	if resp.StatusCode >= 400 {
+		c.fail(op)
+		switch resp.StatusCode {
+		case http.StatusNotFound:
+			return nil, ErrNotFound
+		case http.StatusUnauthorized:
+			return nil, ErrUnauthorized
+		}
+		return nil, &APIError{Provider: c.provider, Status: resp.StatusCode, Message: errorMessage(body, resp.Status)}
+	}
+	metrics.GitProviderUp.Set(1)
+	return body, nil
+}
+
 func (c *apiClient) fail(op string) {
 	metrics.GitAPIErrors.WithLabelValues(c.provider, op).Inc()
 }

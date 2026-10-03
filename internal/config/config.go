@@ -106,6 +106,16 @@ type Config struct {
 	WorkflowMaxAttempts   int
 	WorkflowLease         time.Duration
 	DiscoveryTimeout      time.Duration
+
+	// HMR.CMN-0005: the check of the specification repository and the navigator.
+	SpecScanPushDebounce    time.Duration
+	SpecScanPushDebounceMax time.Duration
+	SpecScanMaxFileBytes    int64
+	SpecScanTimeout         time.Duration
+	SpecFilePreviewMaxBytes int64
+	SpecSearchMaxLimit      int
+	SpecAgentReadMaxChars   int
+	SpecAgentPageSize       int
 }
 
 // DefaultUploadTypes is the default allow-list of chat attachment MIME types.
@@ -198,6 +208,30 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if c.AgentIdleTimeout, err = envDuration("AGENT_IDLE_TIMEOUT", 15*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.SpecScanPushDebounce, err = envDuration("SPEC_SCAN_PUSH_DEBOUNCE", 30*time.Second); err != nil {
+		return nil, err
+	}
+	if c.SpecScanPushDebounceMax, err = envDuration("SPEC_SCAN_PUSH_DEBOUNCE_MAX", 5*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.SpecScanTimeout, err = envDuration("SPEC_SCAN_TIMEOUT", 15*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.SpecScanMaxFileBytes, err = envBytes("SPEC_SCAN_MAX_FILE_BYTES", 2<<20); err != nil {
+		return nil, err
+	}
+	if c.SpecFilePreviewMaxBytes, err = envBytes("SPEC_FILE_PREVIEW_MAX_BYTES", 5<<20); err != nil {
+		return nil, err
+	}
+	if c.SpecSearchMaxLimit, err = envInt("SPEC_SEARCH_MAX_LIMIT", 50); err != nil {
+		return nil, err
+	}
+	if c.SpecAgentReadMaxChars, err = envInt("SPEC_AGENT_READ_MAX_CHARS", 40000); err != nil {
+		return nil, err
+	}
+	if c.SpecAgentPageSize, err = envInt("SPEC_AGENT_PAGE_SIZE", 20); err != nil {
 		return nil, err
 	}
 	if c.UploadMaxBytes, err = envInt64("UPLOAD_MAX_BYTES", 20<<20); err != nil {
@@ -352,6 +386,27 @@ func envInt64(name string, def int64) (int64, error) {
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 	return n, nil
+}
+
+// envBytes reads a size in bytes: a number or a number with KB, MB or GB
+// (binary units), e.g. 2MB.
+func envBytes(name string, def int64) (int64, error) {
+	v := strings.ToUpper(strings.TrimSpace(env(name, "")))
+	if v == "" {
+		return def, nil
+	}
+	mult := int64(1)
+	for suffix, m := range map[string]int64{"KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30} {
+		if strings.HasSuffix(v, suffix) {
+			v, mult = strings.TrimSpace(strings.TrimSuffix(v, suffix)), m
+			break
+		}
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s: a size like 2MB or a number of bytes is expected", name)
+	}
+	return n * mult, nil
 }
 
 func envDuration(name string, def time.Duration) (time.Duration, error) {

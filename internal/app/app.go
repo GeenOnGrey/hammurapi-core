@@ -50,6 +50,7 @@ import (
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/rules"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/runner"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/services"
+	"github.com/GreenOnGrey/hammurapi-core/internal/features/specindex"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/validation"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/voice"
 	"github.com/GreenOnGrey/hammurapi-core/internal/features/webhooks"
@@ -191,17 +192,24 @@ type slices struct {
 	discovery *discovery.Service
 	codegen   *codegen.Service
 	catalog   *catalog.Syncer
+	spec      *specindex.Service
 }
 
 func (c *core) slices() *slices {
 	branch := c.cfg.GitDefaultBranch
+	cfg := c.cfg
+	spec := specindex.NewService(c.pool, c.provider, c.events, specindex.Config{DefaultBranch: branch,
+		PushDebounce: cfg.SpecScanPushDebounce, PushDebounceMax: cfg.SpecScanPushDebounceMax, MaxFileBytes: cfg.SpecScanMaxFileBytes,
+		Timeout: cfg.SpecScanTimeout, PreviewMaxBytes: cfg.SpecFilePreviewMaxBytes, SearchMaxLimit: cfg.SpecSearchMaxLimit,
+		AgentReadMaxChars: cfg.SpecAgentReadMaxChars, AgentPageSize: cfg.SpecAgentPageSize})
 	return &slices{
+		spec:      spec,
 		gates:     gates.NewService(c.store, c.provider, c.authSvc, c.events, gategen.Generator{Q: c.pool}, branch),
 		features:  features.NewService(c.store, c.provider, c.authSvc, c.events, branch),
 		metrics:   metricsources.NewService(c.pool, c.secrets),
 		discovery: discovery.NewService(c.pool, c.events),
 		codegen:   codegen.NewService(c.store, c.events),
-		catalog:   &catalog.Syncer{Pool: c.pool, Git: c.provider},
+		catalog:   &catalog.Syncer{Pool: c.pool, Git: c.provider, CatalogChanged: spec.RequestCatalog},
 	}
 }
 
@@ -237,6 +245,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 
 	approvalSvc := approvals.NewService(c.store, approvals.NewRepository(c.pool), c.provider, tokens, c.events, gategen.Generator{Q: c.pool})
 	domainSvc := domains.NewService(c.pool, c.events)
+	domainSvc.CatalogChanged = sl.spec.RequestCatalog // R6: a new domain or system triggers a check
 	profileSvc := profile.NewService(c.pool)
 	adminSvc := admin.NewService(c.pool)
 	adminSvc.RunnerExecutor = cfg.RunnerExecutor
@@ -271,7 +280,16 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 		}
 		return out, err
 	}
+	overviewSvc.SpecFocus = func(ctx context.Context) ([]overview.Item, error) {
+		items, err := sl.spec.Focus(ctx)
+		out := make([]overview.Item, 0, len(items))
+		for _, it := range items {
+			out = append(out, overview.Item{Kind: it.Kind, Key: it.Key, Title: it.Title, Action: it.Action, WaitingSince: it.WaitingSince, Hint: it.Hint})
+		}
+		return out, err
+	}
 	mcpServer := mcp.NewServer()
+	mcpServer.Register(sl.spec.Tools()...) // spec_* in every scenario (HMR.CMN-0005 R18)
 	chatSvc := agent.NewService(agent.NewRepository(c.pool), c.store, operatorClient, agentCfg, mcpServer, cfg.InternalURL+"/mcp", hub, attSvc, c.s3, loadPrincipal)
 	chatSvc.IdleTimeout = cfg.AgentIdleTimeout
 	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
@@ -303,6 +321,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 			overviewSvc.Routes(r)
 			issueSvc.Routes(r)
 			sl.discovery.Routes(r)
+			sl.spec.Routes(r)
 			features.NewHandlers(sl.features).Routes(r)
 			gates.NewHandlers(sl.gates).Routes(r)
 			approvals.NewHandlers(approvalSvc).Routes(r)
@@ -328,6 +347,7 @@ func RunAPI(ctx context.Context, cfg *config.Config) error {
 		deployAdmin.Routes(r)
 		flagHook.AdminRoutes(r)
 		agentCfg.Routes(r) // global administrators only
+		sl.spec.AdminRoutes(r)
 	})
 	r.Method(http.MethodPost, "/hooks/v1/git", webhooks.NewReceiver(c.provider, cfg.WebhookSecret, producer))
 	r.Method(http.MethodPost, "/hooks/v1/ci-results", &ciresults.Handler{Pool: c.pool, Secrets: cfg.CIResultsSecret, Events: c.events})
@@ -423,7 +443,9 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	operatorClient := &agentapi.Client{BaseURL: cfg.AgentAddr, Token: cfg.AgentServiceToken}
 	agentCfg := agentcfg.NewService(c.pool, c.box, operatorClient, c.events, c.s3, c.provider, tokens, cfg.GitDefaultBranch)
 	proc.Skills = agentCfg // pushes to /agent/ rebuild the skills snapshot
+	proc.Specs = sl.spec   // pushes to the default branch update the specification index
 	mcpServer := mcp.NewServer()
+	mcpServer.Register(sl.spec.Tools()...)
 	mcpServer.Register(agent.Tools(c.toolDeps(sl, loadPrincipal))...)
 	agents := &agentrun.Runner{Operator: operatorClient, Config: agentCfg, MCP: mcpServer, URL: cfg.WorkerMCPURL + "/mcp"}
 
@@ -462,6 +484,7 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 		return kafka.Consume(gctx, cfg.KafkaBrokers, "hammurapi-worker", kafka.TopicImports, importSvc.Handle)
 	})
 	g.Go(func() error { return engine.Run(gctx) })
+	g.Go(func() error { return sl.spec.Run(gctx) }) // checks of the specification repository (HMR.CMN-0005)
 	g.Go(func() error {
 		// Full catalog synchronization once a day (arch §10); pushes trigger it in between.
 		t := time.NewTicker(24 * time.Hour)

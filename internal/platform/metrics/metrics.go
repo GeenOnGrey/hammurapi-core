@@ -44,6 +44,23 @@ var (
 	LLMCost = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "hammurapi_llm_cost_usd_total", Help: "LLM cost in US dollars by connection and model.",
 	}, []string{"connection", "model"})
+	// Index of the specification repository (HMR.CMN-0005 arch §11).
+	SpecScanRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "hammurapi_spec_scan_runs_total", Help: "Checks of the specification repository by trigger and result.",
+	}, []string{"trigger", "result"})
+	SpecScanDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "hammurapi_spec_scan_duration_seconds", Help: "Duration of a check of the specification repository.",
+		Buckets: []float64{1, 5, 15, 30, 60, 180, 600, 900},
+	})
+	SpecIndexIssuesOpen = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hammurapi_spec_index_issues_open", Help: "Open indexing problems by kind.",
+	}, []string{"kind"})
+	SpecDocuments = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hammurapi_spec_documents_total", Help: "Documents in the specification index.",
+	})
+	SpecIndexedFeatures = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hammurapi_spec_indexed_features_total", Help: "Features indexed from the repository.",
+	})
 	GitProviderUp = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "hammurapi_git_provider_up", Help: "1 if the last git provider call succeeded.",
 	})
@@ -86,6 +103,7 @@ func init() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		HTTPRequests, HTTPDuration, GitAPIErrors, WebhookEvents, KafkaLag,
 		AgentSessions, AgentProcessStarts, LLMRequests, LLMErrors, LLMTokens, LLMCost, GitProviderUp, GateTransitions,
+		SpecScanRuns, SpecScanDuration, SpecIndexIssuesOpen, SpecDocuments, SpecIndexedFeatures,
 		WorkflowRuns, WorkflowTransitionDuration, WorkflowBlocked, RunnerTasks, RunnerTaskDuration,
 		RunnerTokens, DeployRuns, ReleaseRollbacks,
 	)

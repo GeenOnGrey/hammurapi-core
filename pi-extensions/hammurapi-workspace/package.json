@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Pi's built-in file and shell tools executed in a Hammurapi runner task (HMR.CMN-0004).",
+  "description": "Pi's built-in file and shell tools executed in a Hammurapi runner task (FTR.HMR.CMN-0004).",
   "pi": {
     "extensions": [
       "./index.ts"

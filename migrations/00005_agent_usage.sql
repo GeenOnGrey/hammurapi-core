@@ -1,5 +1,5 @@
--- HMR.CMN-0004: usage by scenario, connection and model. Correct whether
--- agent_usage already exists (HMR.CMN-0002) or not.
+-- FTR.HMR.CMN-0004: usage by scenario, connection and model. Correct whether
+-- agent_usage already exists (FTR.HMR.CMN-0002) or not.
 
 -- +goose Up
 -- +goose StatementBegin
@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS agent_usage_scenario ON agent_usage (scenario, create
 -- +goose StatementBegin
 DROP INDEX IF EXISTS agent_usage_scenario;
 DROP INDEX IF EXISTS agent_usage_created;
--- model and user_id existed before this migration (HMR.CMN-0002) and stay;
+-- model and user_id existed before this migration (FTR.HMR.CMN-0002) and stay;
 -- the table itself stays too.
 ALTER TABLE agent_usage
   DROP COLUMN IF EXISTS chat_session_id,

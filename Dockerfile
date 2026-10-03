@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/fakegitlab ./cmd/fakegitlab && mkdir -p /out/runs /out/work
 
 # Release image (docker build --target release): Hammurapi and the Pi agent in
-# one image (HMR.INFRA-0002 R4, HMR.CMN-0004 R2) — api, worker, the agent
+# one image (FTR.HMR.INFRA-0002 R4, FTR.HMR.CMN-0004 R2) — api, worker, the agent
 # operator (mode agent), runner, cleaner and migrate. The Pi version comes from
 # deploy/versions.env (PI_VERSION) and changes only by PR. The
 # hammurapi-workspace extension routes Pi's file and shell tools to runner

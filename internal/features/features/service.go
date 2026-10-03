@@ -377,7 +377,8 @@ func PermissionsOf(p *domain.Principal, f *specdata.Feature, gates []specdata.Ga
 	perm := Permissions{Edit: []domain.Area{}, Submit: []domain.Area{}, Approve: []domain.Area{}, DeleteGate: []domain.Area{}, AddGate: []domain.Area{}}
 	expert := p.IsExpertOf(f.DomainKey)
 	perm.Delete = (expert || p.GlobalAdmin) && f.Phase.Active()
-	perm.SetFlag = expert && f.Phase != domain.PhaseDeleted && f.Phase != domain.PhaseRolledBack && f.Phase != domain.PhaseReleased
+	perm.SetFlag = expert && f.Phase != domain.PhaseDeleted && f.Phase != domain.PhaseRolledBack && f.Phase != domain.PhaseReleased &&
+		f.Phase != domain.PhaseIndexed
 	if f.Phase != domain.PhaseSpec || !expert {
 		return perm
 	}

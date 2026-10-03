@@ -129,7 +129,10 @@ func MatchGlob(glob, p string) bool {
 type Syncer struct {
 	Pool *pgxpool.Pool
 	Git  git.Provider
-	mu   sync.Mutex
+	// CatalogChanged runs in the transaction of a synchronization: specifications
+	// waiting for a domain or a system get an extra check (HMR.CMN-0005 R6).
+	CatalogChanged func(ctx context.Context, q postgres.Querier) error
+	mu             sync.Mutex
 }
 
 // Result of a synchronization.
@@ -380,6 +383,9 @@ func (s *Syncer) Apply(ctx context.Context, entities []Entity) (*Result, error) 
 			}
 		}
 		res.Errors = len(errs)
+		if s.CatalogChanged != nil {
+			return s.CatalogChanged(ctx, tx)
+		}
 		return nil
 	})
 	if err != nil {

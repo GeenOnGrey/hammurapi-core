@@ -74,14 +74,14 @@ func (s *PG) PeekNumber(ctx context.Context, systemID uuid.UUID) (int, error) {
 const featureCols = `
 	f.id, f.unique_id, f.system_id, d.key, s.key, d.approval_required, f.number, f.title,
 	f.branch_name, f.pr_number, f.pr_url, f.phase, f.is_problem, f.imported, f.metric, f.flag_key,
-	f.parent_id, p.unique_id, f.created_by, cu.display_name, f.created_at,
+	f.parent_id, p.unique_id, COALESCE(f.created_by, '00000000-0000-0000-0000-000000000000'), COALESCE(cu.display_name, ''), f.created_at,
 	f.deleted_by, du.display_name, f.deleted_at, f.branch_cleanup_pending`
 
 const featureFrom = `
 	FROM features f
 	JOIN systems s ON s.id = f.system_id
 	JOIN domains d ON d.id = s.domain_id
-	JOIN users cu ON cu.id = f.created_by
+	LEFT JOIN users cu ON cu.id = f.created_by -- indexed features have no author
 	LEFT JOIN features p ON p.id = f.parent_id
 	LEFT JOIN users du ON du.id = f.deleted_by`
 
@@ -195,7 +195,8 @@ func (s *PG) Fixes(ctx context.Context, parentID uuid.UUID) ([]FeatureRef, error
 }
 
 func (s *PG) ListFeatures(ctx context.Context, lf ListFilter) ([]ListedFeature, error) {
-	where := []string{"f.phase <> 'deleted'"}
+	// Indexed features (FTR.HMR.CMN-0005 R4) are read in the navigator, not in the cycle lists.
+	where := []string{"f.phase NOT IN ('deleted', 'indexed')"}
 	args := []any{}
 	arg := func(v any) string {
 		args = append(args, v)

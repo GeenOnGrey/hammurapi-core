@@ -1,4 +1,4 @@
--- HMR.CMN-0004: snapshots of the agent skills from the specification
+-- FTR.HMR.CMN-0004: snapshots of the agent skills from the specification
 -- repository and the audit log of the Agent section (including skill PRs).
 
 -- +goose Up
